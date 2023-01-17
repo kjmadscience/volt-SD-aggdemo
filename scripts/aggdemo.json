@@ -25,7 +25,6 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 6,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -34,10 +33,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "WLtAQ52Gk"
-      },
+      "datasource": {},
       "fieldConfig": {
         "defaults": {
           "links": []
@@ -70,7 +66,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.5.3",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -86,12 +82,22 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg by (procedure)  (irate(voltdbbl_procedureprofile{measuretype=\"invocations\",procedure=\"mediationdemo.FlushStaleSessions\"}[1m]) >-1)",
           "interval": "",
           "legendFormat": "{{procedure}}",
+          "range": true,
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg by (procedure)  (irate(voltdbbl_procedureprofile{measuretype=\"invocations\",procedure=\"mediationdemo.HandleMediationCDR\"}[1m]) >-1)",
           "interval": "",
           "legendFormat": "{{procedure}}",
@@ -136,10 +142,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "WLtAQ52Gk"
-      },
+      "datasource": {},
       "fieldConfig": {
         "defaults": {
           "links": []
@@ -172,7 +175,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.5.3",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -182,31 +185,53 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_agg_state_age_qty_1min / 60)",
           "interval": "",
           "legendFormat": "Sessions aggregated due to Age Each Second",
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_agg_state_end_qty_1min / 60)",
           "interval": "",
           "legendFormat": "Sessions aggregated due to Ending Each Second",
           "refId": "D"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_agg_state_late_qty_1min / 60 )",
           "interval": "",
           "legendFormat": "Sessions cancelled due to lateness each Second",
           "refId": "B"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg(voltdbbl_mediation_agg_state_qty_qty_1min / 60 )",
           "hide": false,
           "interval": "",
           "legendFormat": "Sessions aggregated due to Quantity Each Second",
+          "range": true,
           "refId": "F"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_agg_state_usage_qty_1min / 60)",
           "interval": "",
           "legendFormat": "Sessions aggregated due to Usage Each Second",
@@ -253,7 +278,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "WLtAQ52Gk"
+        "uid": "P90D7FB18FE595611"
       },
       "fieldConfig": {
         "defaults": {
@@ -287,7 +312,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.5.3",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -303,19 +328,35 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg(voltdbbl_mediation_agg_state_unaggregated_sessions)",
           "hide": false,
           "interval": "",
           "legendFormat": "Unaggregated Sessions",
+          "range": true,
           "refId": "B"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg(voltdbbl_organizedtablestats{table=\"CDR_DUPCHECK\"})",
           "interval": "",
           "legendFormat": "Dupcheck Sessions",
+          "range": true,
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_organizedtablestats{table=\"UNAGGREGATED_CDRS_BY_SESSION\"})",
           "interval": "",
           "legendFormat": "Partially Aggregated Sessions",
@@ -359,10 +400,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "WLtAQ52Gk"
-      },
+      "datasource": {},
       "fieldConfig": {
         "defaults": {
           "links": []
@@ -395,7 +433,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.5.3",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -405,9 +443,15 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg(voltdbbl_mediation_agg_state_unaggregated_usage)",
           "interval": "",
           "legendFormat": "Unaggregated Usage",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -450,10 +494,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "WLtAQ52Gk"
-      },
+      "datasource": {},
       "fieldConfig": {
         "defaults": {
           "links": []
@@ -486,7 +527,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.5.3",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": true,
       "renderer": "flot",
@@ -507,18 +548,32 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg(voltdbbl_mediation_parameter_AGG_WINDOW_SIZE_MS)",
           "interval": "",
           "legendFormat": "Aggregation Window Size",
+          "range": true,
           "refId": "C"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_parameter_STALENESS_ROWLIMIT)",
           "interval": "",
           "legendFormat": "Max Rows Per Pass",
           "refId": "E"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_parameter_STALENESS_THRESHOLD_MS)",
           "interval": "",
           "legendFormat": "Staleness Threshold (ms)",
@@ -562,10 +617,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "WLtAQ52Gk"
-      },
+      "datasource": {},
       "fieldConfig": {
         "defaults": {
           "links": []
@@ -598,7 +650,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.5.3",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": true,
       "renderer": "flot",
@@ -614,24 +666,42 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg(voltdbbl_mediation_parameter_AGG_USAGE)",
           "interval": "",
           "legendFormat": "Volume of outstanding data we allow before aggregating (bytes)",
+          "range": true,
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_parameter_AGG_SEQNOCOUNT)",
           "interval": "",
           "legendFormat": "Number of outstanding records we allow before aggregating",
           "refId": "B"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_parameter_DUPCHECK_TTLMINUTES)",
           "interval": "",
           "legendFormat": "Maximum Age of a record in the Dup Check table (Minutes)",
           "refId": "D"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg(voltdbbl_mediation_parameter_STALENESS_THRESHOLD_MS )",
           "interval": "",
           "legendFormat": "Time before a session is declared stale",
@@ -675,13 +745,9 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "WLtAQ52Gk"
-      },
+      "datasource": {},
       "fieldConfig": {
         "defaults": {
-          "custom": {},
           "links": []
         },
         "overrides": []
@@ -712,7 +778,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "7.2.1",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -722,12 +788,22 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg(voltdbbl_mediation_parameter_STALENESS_THRESHOLD_MS / 60000  )",
           "interval": "",
           "legendFormat": "Requested Aggregation Flush  Lag (minutes)",
+          "range": true,
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
           "expr": "avg((   voltdbbl_current_agg_lag_ms)/ 60000  )",
           "interval": "",
           "legendFormat": "Current Aggregation Flush Lag (minutes)",
@@ -772,13 +848,9 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "WLtAQ52Gk"
-      },
+      "datasource": {},
       "fieldConfig": {
         "defaults": {
-          "custom": {},
           "links": []
         },
         "overrides": []
@@ -809,7 +881,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "7.2.1",
+      "pluginVersion": "9.2.4",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -824,9 +896,15 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P90D7FB18FE595611"
+          },
+          "editorMode": "code",
           "expr": "avg by (topic)  (irate(voltdb_topic_last_offset[1m])) ",
           "interval": "",
           "legendFormat": "{{topic}} Kafka Offset",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -865,7 +943,7 @@
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 36,
+  "schemaVersion": 37,
   "style": "dark",
   "tags": [
     "Sandbox"
@@ -894,6 +972,6 @@
   "timezone": "",
   "title": "Mediation",
   "uid": "rHJSTjPGk",
-  "version": 13,
+  "version": 1,
   "weekStart": ""
 }
