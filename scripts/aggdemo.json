@@ -970,8 +970,8 @@
     ]
   },
   "timezone": "",
-  "title": "Mediation",
-  "uid": "rHJSTjPGk",
+  "title": "Aggregation",
+  "uid": "voltdb-aggdemo",
   "version": 1,
   "weekStart": ""
 }
