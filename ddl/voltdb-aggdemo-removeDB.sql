@@ -28,8 +28,8 @@ DROP STREAM aggregated_cdrs IF EXISTS;
 
 DROP STREAM unaggregated_cdrs IF EXISTS;
 
-DROP FUNCTION getHighestValidSequence IF EXISTS
+DROP FUNCTION getHighestValidSequence IF EXISTS;
 
-DROP FUNCTION sequenceToString FROM METHOD IF EXISTS;
+DROP FUNCTION sequenceToString IF EXISTS;
 
 
