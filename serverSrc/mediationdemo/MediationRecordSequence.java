@@ -77,7 +77,7 @@ public class MediationRecordSequence {
 	 * See if we have a full range from zero to seqno. Useful
 	 * for checking for missing records prior to aggregation.
 	 * @param seqno
-	 * @return
+	 * @return true if we have a full set.
 	 */
 	public boolean weHaveFromZeroTo(int seqno) {
 

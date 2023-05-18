@@ -29,7 +29,7 @@ import org.voltdb.VoltTable;
 import org.voltdb.types.TimestampType;
 
 /**
- * Abstract procedure class that contains shared aggregation and cancelation functionality.
+ * Abstract procedure class that contains shared aggregation and cancellation functionality.
  *
  */
 public abstract class AbstractMediationProcedure extends VoltProcedure {
