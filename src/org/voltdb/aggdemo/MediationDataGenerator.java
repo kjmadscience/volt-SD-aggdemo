@@ -86,10 +86,10 @@ public class MediationDataGenerator {
 	/**
 	 * Set this to false if you want to send CDRS to VoltDB directly..
 	 */
-	boolean useKafka = true;
+	boolean useKafka = false;
 
 	public MediationDataGenerator(String hostnames, int userCount, long dupCheckTtlMinutes, int tpMs,
-			int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio) throws Exception {
+			int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag) throws Exception {
 
 		this.hostnames = hostnames;
 		this.userCount = userCount;
@@ -100,12 +100,16 @@ public class MediationDataGenerator {
 		this.dupRatio = dupRatio;
 		this.lateRatio = lateRatio;
 		this.dateis1970Ratio = dateis1970Ratio;
+		
+		if (useKafkaFlag > 0) {
+		    useKafka = true;
+		}
 
 		msg("hostnames=" + hostnames + ", users=" + userCount + ", tpMs=" + tpMs + ",durationSeconds="
 				+ durationSeconds);
-		msg("missingRatio=" + missingRatio + ", dupRatio=" + dupRatio + ", lateRatio=" + lateRatio + ", dateis1970Ratio="
-				+ dateis1970Ratio);
-
+        msg("missingRatio=" + missingRatio + ", dupRatio=" + dupRatio + ", lateRatio=" + lateRatio + ", dateis1970Ratio="
+                + dateis1970Ratio);
+        msg("use Kafka = " + useKafka);
 		msg("Log into VoltDB's Kafka Broker");
 		
 		producer = connectToKafka(hostnames, "org.apache.kafka.common.serialization.LongSerializer",
@@ -218,7 +222,7 @@ public class MediationDataGenerator {
 
 		sendRemainingMessages();
 
-		printStatus();
+		printStatus(startMs);
 
 	}
 
@@ -253,14 +257,21 @@ public class MediationDataGenerator {
 
 	/**
 	 * Print general status info
+	 * @param startMsReported 
 	 */
-	private void printStatus() {
+	private void printStatus(long startMsReported) {
 
 		msg("normalCDRCount = " + normalCDRCount);
 		msg("missingCount = " + missingCount);
 		msg("dupCount = " + dupCount);
 		msg("lateCount = " + lateCount);
-		msg("dateis1970Count = " + dateis1970Count);
+        msg("dateis1970Count = " + dateis1970Count);
+        msg("useKafka = " + useKafka);
+        
+        if (System.currentTimeMillis() > 5000 + startMsReported) {
+            long observedTps = (normalCDRCount +missingCount+dupCount+ lateCount+dateis1970Count) / ((System.currentTimeMillis() - startMsReported)/1000);
+            msg("observedTps = " + observedTps);
+        }
 
 	}
 
@@ -344,9 +355,10 @@ public class MediationDataGenerator {
 
 	public static void main(String[] args) throws Exception {
 
-		if (args.length != 9) {
-            msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset");
+		if (args.length != 10) {
+            msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag");
             msg("where missingRatio, dupRatio, lateRatio and dateis1970Ratio are '1 in' ratios - i.e. 100 means 1%");
+            msg("For userkafkaflag any value > zero means to use kafka instead of directly speaking to Volt");
 			System.exit(1);
 		}
 
@@ -359,8 +371,10 @@ public class MediationDataGenerator {
 		int lateRatio = Integer.parseInt(args[6]);
 		int dateis1970Ratio = Integer.parseInt(args[7]);
 		int offset = Integer.parseInt(args[8]);
+		int useKafka = Integer.parseInt(args[9]);
+		
 		MediationDataGenerator a = new MediationDataGenerator(hostnames, userCount, durationSeconds, tpMs,
-				durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio);
+				durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio,useKafka);
 		
 		a.run(offset);
 
