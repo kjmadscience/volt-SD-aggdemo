@@ -682,7 +682,7 @@
             "type": "prometheus",
             "uid": "P90D7FB18FE595611"
           },
-          "expr": "avg(voltdbbl_mediation_parameter_AGG_SEQNOCOUNT)",
+          "expr": "avg(voltdbbl_mediation_parameter_AGG_QTYCOUNT)",
           "interval": "",
           "legendFormat": "Number of outstanding records we allow before aggregating",
           "refId": "B"

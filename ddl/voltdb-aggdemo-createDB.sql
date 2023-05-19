@@ -259,7 +259,7 @@ VALUES
 upsert into mediation_parameters
 (parameter_name ,parameter_value)
 VALUES
-('AGG_SEQNOCOUNT',300);
+('AGG_QTYCOUNT',100);
 
 upsert into mediation_parameters
 (parameter_name ,parameter_value)

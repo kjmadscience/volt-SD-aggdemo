@@ -104,8 +104,7 @@ public class FlushStaleSessions extends AbstractMediationProcedure {
 
                 voltQueueSQL(getSessionRunningTotals, oldestSessionDate, aggWindowCloseDate, rowLimit);
                 VoltTable sessionsToClose = voltExecuteSQL()[0];
-                System.out.println(oldestSessionDate.toString() + " " + aggWindowCloseDate.toGMTString() + " "
-                        + sessionsToClose.getRowCount());
+
                 // For each session...
                 while (sessionsToClose.advanceRow()) {
 

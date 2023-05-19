@@ -78,7 +78,7 @@ public abstract class AbstractMediationProcedure extends VoltProcedure {
 	protected static final long ONE_WEEK_IN_MS = 1000 * 60 * 60 * 24 * 7;
 
 	protected static final String AGG_USAGE = "AGG_USAGE";
-	protected static final String AGG_SEQNOCOUNT = "AGG_SEQNOCOUNT";
+	protected static final String AGG_QTYCOUNT = "AGG_QTYCOUNT";
 	protected static final String STALENESS_THRESHOLD_MS = "STALENESS_THRESHOLD_MS";
 	protected static final String AGG_WINDOW_SIZE_MS = "AGG_WINDOW_SIZE_MS";
 	protected static final Object STALENESS_ROWLIMIT = "STALENESS_ROWLIMIT";

@@ -201,3 +201,19 @@ It takes the following parameters:
 An example usage would be:
 
 ````java -jar voltdb-aggdemo-client.jar vdb1,vdb2,vdb3 100000 80 1200 -1 -1 -1 -1 0````
+
+
+
+# Changing Internal Parameters
+
+The demo is controlled by a series of parameters that live in a table called 'mediation_parameters':
+
+|Name|Meaning|Example Value|
+|-|-|-|
+|AGG_USAGE|How much usage we see before we cut a record and send it downstream|1000000000|
+|AGG_QTYCOUNT|How many records we see before we cut a record and send it downstream|100|
+|STALENESS_THRESHOLD_MS|Sessions have to be at LEAST this stale before we cancel|3600000|
+|AGG_WINDOW_SIZE_MS|How many milliseconds worth of stale records we cancel per pass. A pass happens every 1000 ms.|4000|
+|DUPCHECK_TTLMINUTES|How long we keep dup check records|1440|
+|STALENESS_ROWLIMIT||1000|
+

@@ -83,7 +83,7 @@ public class HandleMediationCDR extends AbstractMediationProcedure {
 
 	protected static final long ONE_WEEK_IN_MS = 1000 * 60 * 60 * 24 * 7;
 
-	protected long aggSeqnoThreshold = 50;
+	protected long aggQtyThreshold = 50;
 	protected long aggUsageThreshold = 1000000;
 
 	public VoltTable[] run(long sessionId, long sessionStartUTC, int seqno, String callingNumber, String destination,
@@ -112,13 +112,13 @@ public class HandleMediationCDR extends AbstractMediationProcedure {
 		// parameters are...
 		voltQueueSQL(getSession, sessionId, sessionStartUTCAsDate);
 		voltQueueSQL(getParameter, AGG_USAGE);
-		voltQueueSQL(getParameter, AGG_SEQNOCOUNT);
+		voltQueueSQL(getParameter, AGG_QTYCOUNT);
 
 		VoltTable[] sessionRecords = voltExecuteSQL();
 
 		VoltTable sessionDupCheck = sessionRecords[0];
 		aggUsageThreshold = getParameterIfSet(sessionRecords[1], aggUsageThreshold);
-		aggSeqnoThreshold = getParameterIfSet(sessionRecords[2], aggSeqnoThreshold);
+		aggQtyThreshold = getParameterIfSet(sessionRecords[2], aggQtyThreshold);
 
 		// We use this to store all the sequence numbers we've seen for this session
 		// instead of storing one row per sequence nuumber....
@@ -184,7 +184,7 @@ public class HandleMediationCDR extends AbstractMediationProcedure {
 			// Decide whether to aggregate this session
 			if (recordType.equalsIgnoreCase("E")) {
 				aggReason = "END";
-			} else if (unaggedRecordCount > aggSeqnoThreshold) {
+			} else if (unaggedRecordCount > aggQtyThreshold) {
 				aggReason = "QTY";
 			} else if (unaggedRecordUsage > aggUsageThreshold) {
 				aggReason = "USAGE";
