@@ -1,7 +1,7 @@
 <topics enabled="true">
 <topic name="incoming_cdrs" procedure="HandleMediationCDR">
 </topic>
-<topic name="bad_cdrs" retention="1d"/>
-<topic name="unaggregated_cdrs" retention="1d"/>
-<topic name="aggregated_cdrs" retention="1d"/>
+<topic name="bad_cdrs" retention="10gb"/>
+<topic name="unaggregated_cdrs" retention="10gb"/>
+<topic name="aggregated_cdrs" retention="10gb"/>
 </topics>
