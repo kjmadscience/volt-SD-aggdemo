@@ -254,7 +254,7 @@ END_OF_BATCH
 upsert into mediation_parameters
 (parameter_name ,parameter_value)
 VALUES
-('AGG_USAGE',1000000000);
+('AGG_USAGE',1000000);
 
 upsert into mediation_parameters
 (parameter_name ,parameter_value)
