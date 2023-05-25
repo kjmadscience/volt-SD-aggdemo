@@ -451,8 +451,10 @@ public class MediationDataGenerator {
 		props.put("bootstrap.servers", kafkaBrokers.toString());
 		props.put("acks", "all");
 		props.put("retries", 0);
+		
+	    // batch.size is how many bytes a batch can take up, not how many records in a  batch
 		props.put("batch.size", 1638400);
-		props.put("linger.ms", 1);
+		props.put("linger.ms", 10);
 		props.put("buffer.memory", 33554432);
 		props.put("key.serializer", keySerializer);
 		props.put("value.serializer", valueSerializer);
