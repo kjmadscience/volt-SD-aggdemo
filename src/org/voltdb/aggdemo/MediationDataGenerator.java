@@ -44,6 +44,7 @@ import org.voltdb.client.ClientResponse;
 import org.voltdb.client.ProcCallException;
 
 import org.voltdb.client.topics.VoltDBKafkaPartitioner;
+import org.voltdb.voltutil.stats.SafeHistogramCache;
 
 /**
  * This generates mock CDRS that need to be aggregated. It also deliberately
@@ -53,477 +54,545 @@ import org.voltdb.client.topics.VoltDBKafkaPartitioner;
  */
 public class MediationDataGenerator {
 
-	Client voltClient = null;
-	Producer<Long, MediationMessage> producer = null;
+    /**
+     * Max time we track for stats purposes
+     */
+    private static final int MAX_LAG_MS = 10000;
 
-	String hostnames;
-	int userCount;
-	int tpMs;
-	int durationSeconds;
+    /**
+     * Name of stat we store
+     */
+    public static final String INPUT_LAG = "InputLag";
+ 
+    public static SafeHistogramCache shc = SafeHistogramCache.getInstance();
 
-	int missingRatio;
-	int dupRatio;
-	int lateRatio;
-	int dateis1970Ratio;
+    Client voltClient = null;
+    Producer<Long, MediationMessage> producer = null;
 
-	int normalCDRCount = 0;
-	int missingCount = 0;
-	int dupCount = 0;
-	int lateCount = 0;
-	int normalCD = 0;
-	int dateis1970Count = 0;
+    String hostnames;
+    int userCount;
+    int tpMs;
+    int durationSeconds;
 
-	HashMap<String, MediationSession> sessionMap = new HashMap<String, MediationSession>();
-	ArrayList<MediationMessage> dupMessages = new ArrayList<MediationMessage>();
-	ArrayList<MediationMessage> lateMessages = new ArrayList<MediationMessage>();
+    int missingRatio;
+    int dupRatio;
+    int lateRatio;
+    int dateis1970Ratio;
 
-	long startMs;
-	Random r = new Random();
-	long sessionId = 0;
+    int normalCDRCount = 0;
+    int missingCount = 0;
+    int dupCount = 0;
+    int lateCount = 0;
+    int normalCD = 0;
+    int dateis1970Count = 0;
 
-	long dupCheckTtlMinutes = 3600;
+    HashMap<String, MediationSession> sessionMap = new HashMap<String, MediationSession>();
+    ArrayList<MediationMessage> dupMessages = new ArrayList<MediationMessage>();
+    ArrayList<MediationMessage> lateMessages = new ArrayList<MediationMessage>();
 
-	/**
-	 * Set this to false if you want to send CDRS to VoltDB directly..
-	 */
-	boolean useKafka = false;
+    long startMs;
+    Random r = new Random();
+    long sessionId = 0;
 
-	public MediationDataGenerator(String hostnames, int userCount, long dupCheckTtlMinutes, int tpMs,
-			int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag) throws Exception {
+    long dupCheckTtlMinutes = 3600;
 
-		this.hostnames = hostnames;
-		this.userCount = userCount;
-		this.dupCheckTtlMinutes = dupCheckTtlMinutes;
-		this.tpMs = tpMs;
-		this.durationSeconds = durationSeconds;
-		this.missingRatio = missingRatio;
-		this.dupRatio = dupRatio;
-		this.lateRatio = lateRatio;
-		this.dateis1970Ratio = dateis1970Ratio;
-		
-		if (useKafkaFlag > 0) {
-		    useKafka = true;
-		}
+    /**
+     * Set this to false if you want to send CDRS to VoltDB directly..
+     */
+    boolean useKafka = false;
 
-		msg("hostnames=" + hostnames + ", users=" + userCount + ", tpMs=" + tpMs + ",durationSeconds="
-				+ durationSeconds);
-        msg("missingRatio=" + missingRatio + ", dupRatio=" + dupRatio + ", lateRatio=" + lateRatio + ", dateis1970Ratio="
-                + dateis1970Ratio);
+    public MediationDataGenerator(String hostnames, int userCount, long dupCheckTtlMinutes, int tpMs,
+            int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag)
+            throws Exception {
+
+        this.hostnames = hostnames;
+        this.userCount = userCount;
+        this.dupCheckTtlMinutes = dupCheckTtlMinutes;
+        this.tpMs = tpMs;
+        this.durationSeconds = durationSeconds;
+        this.missingRatio = missingRatio;
+        this.dupRatio = dupRatio;
+        this.lateRatio = lateRatio;
+        this.dateis1970Ratio = dateis1970Ratio;
+
+        if (useKafkaFlag > 0) {
+            useKafka = true;
+        }
+
+        msg("hostnames=" + hostnames + ", users=" + userCount + ", tpMs=" + tpMs + ",durationSeconds="
+                + durationSeconds);
+        msg("missingRatio=" + missingRatio + ", dupRatio=" + dupRatio + ", lateRatio=" + lateRatio
+                + ", dateis1970Ratio=" + dateis1970Ratio);
         msg("use Kafka = " + useKafka);
-		msg("Log into VoltDB's Kafka Broker");
-		
-		producer = connectToKafka(hostnames, "org.apache.kafka.common.serialization.LongSerializer",
-				"org.voltdb.aggdemo.MediationMessageSerializer");
+        msg("Log into VoltDB's Kafka Broker");
 
-		msg("Log into VoltDB");
-		voltClient = connectVoltDB(hostnames);
+        producer = connectToKafka(hostnames, "org.apache.kafka.common.serialization.LongSerializer",
+                "org.voltdb.aggdemo.MediationMessageSerializer");
 
-	}
+        msg("Log into VoltDB");
+        voltClient = connectVoltDB(hostnames);
 
-	public void run(int offset) {
+    }
 
-		long laststatstime = System.currentTimeMillis();
-		startMs = System.currentTimeMillis();
-		setDupcheckTTLMinutes();
+    public void run(int offset) {
 
-		long currentMs = System.currentTimeMillis();
-		int tpThisMs = 0;
-		long recordCount = 0;
-		long lastReportedRecordCount = 0;
+        long laststatstime = System.currentTimeMillis();
+        startMs = System.currentTimeMillis();
+        setDupcheckTTLMinutes();
 
-		while (System.currentTimeMillis() < (startMs + (1000 * durationSeconds))) {
+        long currentMs = System.currentTimeMillis();
+        int tpThisMs = 0;
+        long recordCount = 0;
+        long lastReportedRecordCount = 0;
+        double actualTps = 0;
 
-			recordCount++;
+        while (System.currentTimeMillis() < (startMs + (1000 * durationSeconds))) {
 
-			String randomCallingNumber = "Num" + (r.nextInt(userCount) + offset);
+            recordCount++;
 
-			MediationSession ourSession = sessionMap.get(randomCallingNumber);
+            String randomCallingNumber = "Num" + (r.nextInt(userCount) + offset);
 
-			if (ourSession == null) {
-				ourSession = new MediationSession(randomCallingNumber, getRandomDestinationId(), + (offset + sessionId++), r);
-				sessionMap.put(randomCallingNumber, ourSession);
-			}
+            MediationSession ourSession = sessionMap.get(randomCallingNumber);
 
-			MediationMessage nextCdr = ourSession.getNextCdr();
+            if (ourSession == null) {
+                ourSession = new MediationSession(randomCallingNumber, getRandomDestinationId(),
+                        +(offset + sessionId++), r);
+                sessionMap.put(randomCallingNumber, ourSession);
+            }
 
-			// Now decide what to do. We could just send the CDR, but where's the fun in
-			// that?
+            MediationMessage nextCdr = ourSession.getNextCdr();
 
-			if (missingRatio > 0 && r.nextInt(missingRatio) == 0) {
-				// Let's just pretend this CDR never happened...
-				missingCount++;
-			} else if (dupRatio > 0 && r.nextInt(dupRatio) == 0) {
+            // Now decide what to do. We could just send the CDR, but where's the fun in
+            // that?
 
-				// let's send it. Lot's of times...
-				for (int i = 0; i < 2 + r.nextInt(10); i++) {
-					send(nextCdr);
-				}
+            if (missingRatio > 0 && r.nextInt(missingRatio) == 0) {
+                // Let's just pretend this CDR never happened...
+                missingCount++;
+            } else if (dupRatio > 0 && r.nextInt(dupRatio) == 0) {
 
-				// Also add it to a list of dup messages to send again, later...
-				dupMessages.add(nextCdr);
-				dupCount++;
+                // let's send it. Lot's of times...
+                for (int i = 0; i < 2 + r.nextInt(10); i++) {
+                    send(nextCdr);
+                }
 
-			} else if (lateRatio > 0 && r.nextInt(lateRatio) == 0) {
+                // Also add it to a list of dup messages to send again, later...
+                dupMessages.add(nextCdr);
+                dupCount++;
 
-				// Add it to a list of late messages to send later...
-				lateMessages.add(nextCdr);
-				lateCount++;
+            } else if (lateRatio > 0 && r.nextInt(lateRatio) == 0) {
 
-			} else if (dateis1970Ratio > 0 && r.nextInt(dateis1970Ratio) == 0) {
+                // Add it to a list of late messages to send later...
+                lateMessages.add(nextCdr);
+                lateCount++;
 
-				// Set date to Jan 1, 1970, and then send it...
-				nextCdr.setRecordStartUTC(0);
-				send(nextCdr);
-				dateis1970Count++;
+            } else if (dateis1970Ratio > 0 && r.nextInt(dateis1970Ratio) == 0) {
 
-			} else {
+                // Set date to Jan 1, 1970, and then send it...
+                nextCdr.setRecordStartUTC(0);
+                send(nextCdr);
+                dateis1970Count++;
 
-				send(nextCdr);
-				normalCDRCount++;
+            } else {
 
-			}
+                send(nextCdr);
+                normalCDRCount++;
 
-			if (tpThisMs++ > tpMs) {
+            }
 
-				// but sleep if we're moving too fast...
-				while (currentMs == System.currentTimeMillis()) {
-					try {
-						Thread.sleep(0, 50000);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
-				}
+            if (tpThisMs++ > tpMs) {
 
-				currentMs = System.currentTimeMillis();
-				tpThisMs = 0;
-			}
+                // but sleep if we're moving too fast...
+                while (currentMs == System.currentTimeMillis()) {
+                    try {
+                        Thread.sleep(0, 50000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
 
-			if (lateMessages.size() > 100000 || dupMessages.size() > 100000) {
-				sendRemainingMessages();
-			}
+                currentMs = System.currentTimeMillis();
+                tpThisMs = 0;
+            }
 
-			
-			if (laststatstime + 10000 < System.currentTimeMillis()) {
+            if (lateMessages.size() > 100000 || dupMessages.size() > 100000) {
+                sendRemainingMessages();
+            }
 
-				double recordsProcessed = recordCount - lastReportedRecordCount;
-				double tps = 1000 * (recordsProcessed / (System.currentTimeMillis() - laststatstime));
+            if (laststatstime + 10000 < System.currentTimeMillis()) {
 
-				msg("Offset = " + offset +  " Record " + recordCount + " TPS=" + (long) tps);
-				msg("Active Sessions: " + sessionMap.size());
+                double recordsProcessed = recordCount - lastReportedRecordCount;
+                actualTps = 1000 * (recordsProcessed / (System.currentTimeMillis() - laststatstime));
 
-				laststatstime = System.currentTimeMillis();
-				lastReportedRecordCount = recordCount;
+                msg("Offset = " + offset + " Record " + recordCount + " TPS=" + (long) actualTps);
+                msg("Active Sessions: " + sessionMap.size());
 
-				printApplicationStats(voltClient,nextCdr);
-			}
+                laststatstime = System.currentTimeMillis();
+                lastReportedRecordCount = recordCount;
 
-			
-		}
+                printApplicationStats(voltClient, nextCdr);
+            }
 
-		sendRemainingMessages();
+        }
 
-		printStatus(startMs);
+        // Get some stats!
+        gatherInputLagStats();
 
-	}
+        sendRemainingMessages();
 
-	/**
-	 * Update the table cdr_dupcheck and change how long we keep records for. We do
-	 * this at the start of each run because users might want to play around with
-	 * the parameter DUPCHECK_TTLMINUTES between runs.
-	 */
-	private void setDupcheckTTLMinutes() {
-		try {
+        printStatus(startMs);
 
-			// Default is one day
-			long ttlMinutes = 1440;
+        reportRunLatencyStats(tpMs, (long) actualTps);
 
-			// Swee if param is set. If it is, update table DDL...
-			ClientResponse cr = voltClient.callProcedure("@AdHoc",
-					"SELECT parameter_value FROM mediation_parameters WHERE parameter_name = 'DUPCHECK_TTLMINUTES';");
+    }
 
-			if (cr.getStatus() == ClientResponse.SUCCESS) {
-				VoltTable paramTable = cr.getResults()[0];
-				if (paramTable.advanceRow()) {
-					ttlMinutes = paramTable.getLong("parameter_value");
-					voltClient.callProcedure("@AdHoc", "alter table cdr_dupcheck alter USING TTL " + ttlMinutes
-							+ " MINUTES ON COLUMN insert_date BATCH_SIZE 50000 MAX_FREQUENCY 200;");
-				}
-			}
+    /**
+     * Go an see how long it's been
+     */
+    private void gatherInputLagStats() {
+        try {
 
-		} catch (IOException | ProcCallException e1) {
-			msg("Error:" + e1.getMessage());
-		}
-	}
+            shc.init(INPUT_LAG, MAX_LAG_MS, "time from record creation to processing");
+            
+            // See if param is set. If it is, update table DDL...
+            ClientResponse cr = voltClient.callProcedure("get_processing_lag");
 
-	/**
-	 * Print general status info
-	 * @param startMsReported 
-	 */
-	private void printStatus(long startMsReported) {
+            if (cr.getStatus() == ClientResponse.SUCCESS) {
+                VoltTable lagTable = cr.getResults()[0];
+                while (lagTable.advanceRow()) {
+                    int lagMs = (int) lagTable.getLong("lag_ms");
+                    long howMany = lagTable.getLong("how_many");
 
-		msg("normalCDRCount = " + normalCDRCount);
-		msg("missingCount = " + missingCount);
-		msg("dupCount = " + dupCount);
-		msg("lateCount = " + lateCount);
+                    shc.get(INPUT_LAG).pokeValue(lagMs, howMany);
+                }
+            }
+
+        } catch (IOException | ProcCallException e1) {
+            msg("Error:" + e1.getMessage());
+        }
+
+    }
+
+    /**
+     * Update the table cdr_dupcheck and change how long we keep records for. We do
+     * this at the start of each run because users might want to play around with
+     * the parameter DUPCHECK_TTLMINUTES between runs.
+     */
+    private void setDupcheckTTLMinutes() {
+        try {
+
+            // Default is one day
+            long ttlMinutes = 1440;
+
+            // Swee if param is set. If it is, update table DDL...
+            ClientResponse cr = voltClient.callProcedure("@AdHoc",
+                    "SELECT parameter_value FROM mediation_parameters WHERE parameter_name = 'DUPCHECK_TTLMINUTES';");
+
+            if (cr.getStatus() == ClientResponse.SUCCESS) {
+                VoltTable paramTable = cr.getResults()[0];
+                if (paramTable.advanceRow()) {
+                    ttlMinutes = paramTable.getLong("parameter_value");
+                    voltClient.callProcedure("@AdHoc", "alter table cdr_dupcheck alter USING TTL " + ttlMinutes
+                            + " MINUTES ON COLUMN insert_date BATCH_SIZE 50000 MAX_FREQUENCY 200;");
+                }
+            }
+
+        } catch (IOException | ProcCallException e1) {
+            msg("Error:" + e1.getMessage());
+        }
+    }
+
+    /**
+     * Print general status info
+     * 
+     * @param startMsReported
+     */
+    private void printStatus(long startMsReported) {
+
+        msg("normalCDRCount = " + normalCDRCount);
+        msg("missingCount = " + missingCount);
+        msg("dupCount = " + dupCount);
+        msg("lateCount = " + lateCount);
         msg("dateis1970Count = " + dateis1970Count);
         msg("useKafka = " + useKafka);
-        
+
         if (System.currentTimeMillis() > 5000 + startMsReported) {
-            long observedTps = (normalCDRCount +missingCount+dupCount+ lateCount+dateis1970Count) / ((System.currentTimeMillis() - startMsReported)/1000);
+            long observedTps = (normalCDRCount + missingCount + dupCount + lateCount + dateis1970Count)
+                    / ((System.currentTimeMillis() - startMsReported) / 1000);
             msg("observedTps = " + observedTps);
         }
 
-	}
+    }
 
-	/**
-	 * Send any messages in the late or duplicates queues. Note this is not rate
-	 * limited, and may cause a latency spike
-	 */
-	private void sendRemainingMessages() {
-		// Send late messages
-		msg("sending " + lateMessages.size() + " late messages");
+    /**
+     * Send any messages in the late or duplicates queues. Note this is not rate
+     * limited, and may cause a latency spike
+     */
+    private void sendRemainingMessages() {
+        // Send late messages
+        msg("sending " + lateMessages.size() + " late messages");
 
-		while (lateMessages.size() > 0) {
-			MediationMessage lateCDR = lateMessages.remove(0);
-			send(lateCDR);
-		}
+        while (lateMessages.size() > 0) {
+            MediationMessage lateCDR = lateMessages.remove(0);
+            send(lateCDR);
+        }
 
-		// Send dup messages
-		msg("sending " + dupMessages.size() + " duplicate messages");
-		while (dupMessages.size() > 0) {
-			MediationMessage dupCDR = dupMessages.remove(0);
-			send(dupCDR);
-		}
-	}
+        // Send dup messages
+        msg("sending " + dupMessages.size() + " duplicate messages");
+        while (dupMessages.size() > 0) {
+            MediationMessage dupCDR = dupMessages.remove(0);
+            send(dupCDR);
+        }
+    }
 
-	/**
-	 * Send a CDR to VoltDB via Kafka.
-	 * 
-	 * @param nextCdr
-	 */
-	private void send(MediationMessage nextCdr) {
+    /**
+     * Send a CDR to VoltDB via Kafka.
+     * 
+     * @param nextCdr
+     */
+    private void send(MediationMessage nextCdr) {
 
-		if (useKafka) {
+        if (useKafka) {
 
-			ComplainOnErrorKafkaCallback coekc = new ComplainOnErrorKafkaCallback();
-			ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<Long, MediationMessage>(
-					"incoming_cdrs", nextCdr.getSessionId(), nextCdr);
-			producer.send(newRecord, coekc);
-		} else {
-			sendViaVoltDB(nextCdr);
-		}
+            ComplainOnErrorKafkaCallback coekc = new ComplainOnErrorKafkaCallback();
+            ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<Long, MediationMessage>(
+                    "incoming_cdrs", nextCdr.getSessionId(), nextCdr);
+            producer.send(newRecord, coekc);
+        } else {
+            sendViaVoltDB(nextCdr);
+        }
 
-	}
+    }
 
-	/**
-	 * Send CDR directly to VoltDB, in case you want to see if there's a difference.
-	 * 
-	 * @param nextCdr
-	 */
-	private void sendViaVoltDB(MediationMessage nextCdr) {
+    /**
+     * Send CDR directly to VoltDB, in case you want to see if there's a difference.
+     * 
+     * @param nextCdr
+     */
+    private void sendViaVoltDB(MediationMessage nextCdr) {
 
-		if (voltClient != null) {
-			try {
-				ComplainOnErrorCallback coec = new ComplainOnErrorCallback();
+        if (voltClient != null) {
+            try {
+                ComplainOnErrorCallback coec = new ComplainOnErrorCallback();
 
-				voltClient.callProcedure(coec, "HandleMediationCDR", nextCdr.getSessionId(),
-						nextCdr.getSessionStartUTC(), nextCdr.getSeqno(), nextCdr.getCallingNumber(),
-						nextCdr.getDestination(), nextCdr.getEventType(), nextCdr.getRecordStartUTC(),
-						nextCdr.getRecordUsage());
-			} catch (Exception e) {
-				msg(e.getMessage());
-			}
-		}
+                voltClient.callProcedure(coec, "HandleMediationCDR", nextCdr.getSessionId(),
+                        nextCdr.getSessionStartUTC(), nextCdr.getSeqno(), nextCdr.getCallingNumber(),
+                        nextCdr.getDestination(), nextCdr.getEventType(), nextCdr.getRecordStartUTC(),
+                        nextCdr.getRecordUsage());
+            } catch (Exception e) {
+                msg(e.getMessage());
+            }
+        }
 
-	}
+    }
 
-	/**
-	 * @return A random website.
-	 */
-	private String getRandomDestinationId() {
+    /**
+     * @return A random website.
+     */
+    private String getRandomDestinationId() {
 
-		if (r.nextInt(10) == 0) {
-			return "www.nytimes.com";
-		}
+        if (r.nextInt(10) == 0) {
+            return "www.nytimes.com";
+        }
 
-		if (r.nextInt(10) == 0) {
-			return "www.cnn.com";
-		}
+        if (r.nextInt(10) == 0) {
+            return "www.cnn.com";
+        }
 
-		return "www.voltdb.com";
-	}
+        return "www.voltdb.com";
+    }
 
-	public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
 
-		if (args.length != 10) {
+        if (args.length != 10) {
             msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag");
             msg("where missingRatio, dupRatio, lateRatio and dateis1970Ratio are '1 in' ratios - i.e. 100 means 1%");
             msg("For userkafkaflag any value > zero means to use kafka instead of directly speaking to Volt");
-			System.exit(1);
-		}
+            System.exit(1);
+        }
 
-		String hostnames = args[0];
-		int userCount = Integer.parseInt(args[1]);
-		int tpMs = Integer.parseInt(args[2]);
-		int durationSeconds = Integer.parseInt(args[3]);
-		int missingRatio = Integer.parseInt(args[4]);
-		int dupRatio = Integer.parseInt(args[5]);
-		int lateRatio = Integer.parseInt(args[6]);
-		int dateis1970Ratio = Integer.parseInt(args[7]);
-		int offset = Integer.parseInt(args[8]);
-		int useKafka = Integer.parseInt(args[9]);
-		
-		MediationDataGenerator a = new MediationDataGenerator(hostnames, userCount, durationSeconds, tpMs,
-				durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio,useKafka);
-		
-		a.run(offset);
+        String hostnames = args[0];
+        int userCount = Integer.parseInt(args[1]);
+        int tpMs = Integer.parseInt(args[2]);
+        int durationSeconds = Integer.parseInt(args[3]);
+        int missingRatio = Integer.parseInt(args[4]);
+        int dupRatio = Integer.parseInt(args[5]);
+        int lateRatio = Integer.parseInt(args[6]);
+        int dateis1970Ratio = Integer.parseInt(args[7]);
+        int offset = Integer.parseInt(args[8]);
+        int useKafka = Integer.parseInt(args[9]);
 
-	}
+        MediationDataGenerator a = new MediationDataGenerator(hostnames, userCount, durationSeconds, tpMs,
+                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka);
 
-	/**
-	 * 
-	 * Connect to VoltDB using native APIS
-	 * 
-	 * @param commaDelimitedHostnames
-	 * @return
-	 * @throws Exception
-	 */
-	private static Client connectVoltDB(String commaDelimitedHostnames) throws Exception {
-		Client client = null;
-		ClientConfig config = null;
+        a.run(offset);
 
-		try {
-			msg("Logging into VoltDB");
+    }
 
-			config = new ClientConfig(); // "admin", "idontknow");
-			config.setTopologyChangeAware(true);
-			config.setReconnectOnConnectionLoss(true);
+    /**
+     * 
+     * Connect to VoltDB using native APIS
+     * 
+     * @param commaDelimitedHostnames
+     * @return
+     * @throws Exception
+     */
+    private static Client connectVoltDB(String commaDelimitedHostnames) throws Exception {
+        Client client = null;
+        ClientConfig config = null;
 
-			client = ClientFactory.createClient(config);
+        try {
+            msg("Logging into VoltDB");
 
-			String[] hostnameArray = commaDelimitedHostnames.split(",");
+            config = new ClientConfig(); // "admin", "idontknow");
+            config.setTopologyChangeAware(true);
+            config.setReconnectOnConnectionLoss(true);
 
-			for (int i = 0; i < hostnameArray.length; i++) {
-				msg("Connect to " + hostnameArray[i] + "...");
-				try {
-					client.createConnection(hostnameArray[i]);
-				} catch (Exception e) {
-					msg(e.getMessage());
-				}
-			}
+            client = ClientFactory.createClient(config);
 
-			msg("Connected to VoltDB");
+            String[] hostnameArray = commaDelimitedHostnames.split(",");
 
-		} catch (Exception e) {
-			e.printStackTrace();
-			throw new Exception("VoltDB connection failed.." + e.getMessage(), e);
-		}
+            for (int i = 0; i < hostnameArray.length; i++) {
+                msg("Connect to " + hostnameArray[i] + "...");
+                try {
+                    client.createConnection(hostnameArray[i]);
+                } catch (Exception e) {
+                    msg(e.getMessage());
+                }
+            }
 
-		return client;
+            msg("Connected to VoltDB");
 
-	}
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new Exception("VoltDB connection failed.." + e.getMessage(), e);
+        }
 
-	/**
-	 * Connect to VoltDB using Kafka APIS
-	 * 
-	 * @param commaDelimitedHostnames
-	 * @param keySerializer
-	 * @param valueSerializer
-	 * @return A Kafka Producer for MediationMessages
-	 * @throws Exception
-	 */
-	private static Producer<Long, MediationMessage> connectToKafka(String commaDelimitedHostnames, String keySerializer,
-			String valueSerializer) throws Exception {
+        return client;
 
-		String[] hostnameArray = commaDelimitedHostnames.split(",");
+    }
 
-		StringBuffer kafkaBrokers = new StringBuffer();
-		for (int i = 0; i < hostnameArray.length; i++) {
-			kafkaBrokers.append(hostnameArray[i]);
-			kafkaBrokers.append(":9092");
+    /**
+     * Connect to VoltDB using Kafka APIS
+     * 
+     * @param commaDelimitedHostnames
+     * @param keySerializer
+     * @param valueSerializer
+     * @return A Kafka Producer for MediationMessages
+     * @throws Exception
+     */
+    private static Producer<Long, MediationMessage> connectToKafka(String commaDelimitedHostnames, String keySerializer,
+            String valueSerializer) throws Exception {
 
-			if (i < (hostnameArray.length - 1)) {
-				kafkaBrokers.append(',');
-			}
-		}
+        String[] hostnameArray = commaDelimitedHostnames.split(",");
 
-		Properties props = new Properties();
-		props.put("bootstrap.servers", kafkaBrokers.toString());
-		props.put("acks", "all");
-		props.put("retries", 0);
-		
-	    // batch.size is how many bytes a batch can take up, not how many records in a  batch
-		props.put("batch.size", 1638400);
-		props.put("linger.ms", 10);
-		props.put("buffer.memory", 33554432);
-		props.put("key.serializer", keySerializer);
-		props.put("value.serializer", valueSerializer);
-		props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, VoltDBKafkaPartitioner.class.getName());
+        StringBuffer kafkaBrokers = new StringBuffer();
+        for (int i = 0; i < hostnameArray.length; i++) {
+            kafkaBrokers.append(hostnameArray[i]);
+            kafkaBrokers.append(":9092");
 
-		Producer<Long, MediationMessage> newProducer = new KafkaProducer<>(props);
+            if (i < (hostnameArray.length - 1)) {
+                kafkaBrokers.append(',');
+            }
+        }
 
-		msg("Connected to VoltDB via Kafka");
+        Properties props = new Properties();
+        props.put("bootstrap.servers", kafkaBrokers.toString());
+        props.put("acks", "all");
+        props.put("retries", 0);
 
-		return newProducer;
+        // batch.size is how many bytes a batch can take up, not how many records in a
+        // batch
+        props.put("batch.size", 1638400);
+        props.put("linger.ms", 10);
+        props.put("buffer.memory", 33554432);
+        props.put("key.serializer", keySerializer);
+        props.put("value.serializer", valueSerializer);
+        props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, VoltDBKafkaPartitioner.class.getName());
 
-	}
+        Producer<Long, MediationMessage> newProducer = new KafkaProducer<>(props);
 
-	/**
-	 * Print a formatted message.
-	 * 
-	 * @param message
-	 */
-	public static void msg(String message) {
+        msg("Connected to VoltDB via Kafka");
 
-		SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		Date now = new Date();
-		String strDate = sdfDate.format(now);
-		System.out.println(strDate + ":" + message);
+        return newProducer;
 
-	}
+    }
 
-	/**
-	 * Check VoltDB to see how things are going...
-	 * 
-	 * @param client
-	 * @param nextCdr 
-	 */
-	public static void printApplicationStats(Client client, MediationMessage nextCdr) {
-		try {
+    /**
+     * Print a formatted message.
+     * 
+     * @param message
+     */
+    public static void msg(String message) {
 
-			msg("");
-			msg("Latest Stats:");
-			msg("");
+        SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        Date now = new Date();
+        String strDate = sdfDate.format(now);
+        System.out.println(strDate + ":" + message);
 
-			ClientResponse cr = client.callProcedure("ShowAggStatus__promBL");
-			if (cr.getStatus() == ClientResponse.SUCCESS) {
-				VoltTable[] resultsTables = cr.getResults();
-				for (int i = 0; i < resultsTables.length; i++) {
-					if (resultsTables[i].advanceRow()) {
-						msg(resultsTables[i].toFormattedString());
-					}
+    }
 
-				}
+    /**
+     * Check VoltDB to see how things are going...
+     * 
+     * @param client
+     * @param nextCdr
+     */
+    public static void printApplicationStats(Client client, MediationMessage nextCdr) {
+        try {
 
-			}
+            msg("");
+            msg("Latest Stats:");
+            msg("");
 
-			cr = client.callProcedure("GetBySessionId", nextCdr.getSessionId(), new Date(nextCdr.getSessionStartUTC()));
+            ClientResponse cr = client.callProcedure("ShowAggStatus__promBL");
+            if (cr.getStatus() == ClientResponse.SUCCESS) {
+                VoltTable[] resultsTables = cr.getResults();
+                for (int i = 0; i < resultsTables.length; i++) {
+                    if (resultsTables[i].advanceRow()) {
+                        msg(resultsTables[i].toFormattedString());
+                    }
 
-			if (cr.getStatus() == ClientResponse.SUCCESS) {
-				VoltTable[] resultsTables = cr.getResults();
-				for (int i = 0; i < resultsTables.length; i++) {
-					if (resultsTables[i].advanceRow()) {
-						msg(resultsTables[i].toFormattedString());
-					}
+                }
 
-				}
+            }
 
-			}
+            cr = client.callProcedure("GetBySessionId", nextCdr.getSessionId(), new Date(nextCdr.getSessionStartUTC()));
 
-		} catch (IOException | ProcCallException e1) {
-			msg("Error:" + e1.getMessage());
-		}
+            if (cr.getStatus() == ClientResponse.SUCCESS) {
+                VoltTable[] resultsTables = cr.getResults();
+                for (int i = 0; i < resultsTables.length; i++) {
+                    if (resultsTables[i].advanceRow()) {
+                        msg(resultsTables[i].toFormattedString());
+                    }
 
-	}
+                }
+
+            }
+
+        } catch (IOException | ProcCallException e1) {
+            msg("Error:" + e1.getMessage());
+        }
+
+    }
+
+    /**
+     * Turn latency stats into a grepable string
+     * 
+     * @param tpMs target transactions per millisecond
+     * @param tps  observed TPS
+     */
+    private static void reportRunLatencyStats(int tpMs, double tps) {
+        StringBuffer oneLineSummary = new StringBuffer("GREPABLE SUMMARY:");
+
+        oneLineSummary.append(tpMs);
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(tps);
+        oneLineSummary.append(':');
+
+        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, INPUT_LAG);
+
+        msg(oneLineSummary.toString());
+    }
 
 }

@@ -43,6 +43,15 @@ GROUP BY  truncate(MINUTE, sessionStartUTC) , agg_state;
 
 CREATE INDEX cdssm_ix1 ON cdr_dupcheck_session_summary_minute (sessionStartUTC);
 
+CREATE view cdr_processing_lag AS
+SELECT truncate(MINUTE, sessionStartUTC) sessionStartUTC
+     , SINCE_EPOCH(MILLISECOND, insert_date)  - SINCE_EPOCH(MILLISECOND, sessionStartUTC) lag_ms
+     , count(*) how_many
+FROM cdr_dupcheck
+GROUP BY truncate(MINUTE, sessionStartUTC) 
+     , SINCE_EPOCH(MILLISECOND, insert_date)  - SINCE_EPOCH(MILLISECOND, sessionStartUTC);
+
+
 CREATE VIEW total_unaggregated_usage AS 
 SELECT sum(unaggregated_usage) unaggregated_usage
 FROM cdr_dupcheck;
@@ -135,7 +144,15 @@ ON SCHEDULE  EVERY 1 SECONDS
 PROCEDURE FlushStaleSessions
 ON ERROR LOG 
 RUN ON PARTITIONS;
-   
+
+drop procedure get_processing_lag if exists;
+
+create procedure get_processing_lag as 
+select lag_ms, how_many 
+from cdr_processing_lag 
+where sessionstartutc = truncate(minute, DATEADD(MINUTE, -1, NOW)) 
+order by SESSIONSTARTUTC, lag_ms;
+
 
 --CREATE TOPIC incoming_cdrs EXECUTE PROCEDURE HandleMediationCDR  PROFILE daily;
 

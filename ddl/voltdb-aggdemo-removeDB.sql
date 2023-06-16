@@ -10,6 +10,10 @@ DROP PROCEDURE FlushStaleSessions IF EXISTS;
 
 DROP PROCEDURE ShowAggStatus__promBL IF EXISTS;
 
+DROP PROCEDURE get_processing_lag if exists;
+
+DROP VIEW cdr_processing_lag if exists;
+
 DROP VIEW total_unaggregated_usage IF EXISTS;
 
 DROP VIEW cdr_dupcheck_agg_summary_minute IF EXISTS;
