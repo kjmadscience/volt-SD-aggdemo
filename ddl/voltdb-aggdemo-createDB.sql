@@ -119,7 +119,8 @@ PARTITION ON COLUMN sessionId
 	 destination varchar(512) not null,
 	 startAggTimeUTC timestamp not null,
 	 endAggTimeUTC timestamp not null,
-	 recordUsage bigint not null
+	 recordUsage bigint not null,
+	 agg_date timestamp default now
 );
 
 DROP PROCEDURE GetBySessionId IF EXISTS;
