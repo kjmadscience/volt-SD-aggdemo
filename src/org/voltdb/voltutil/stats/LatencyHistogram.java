@@ -134,8 +134,20 @@ public class LatencyHistogram {
      * @param comment
      */
     public void report(int latency, String comment) {
+        report(latency, comment, 1);
+    }
+    
+ /**
+     * Report a latency measurement. If it's >= maxSize it goes into the last
+     * element. Negative values are forced to zero.
+     * 
+     * @param latency
+     * @param comment
+     * @param howmany
+     */
+    public void report(int latency, String comment, int howMany) {
 
-        reports++;
+        reports += howMany;;
 
         if (latency < 0) {
             latency = 0;
@@ -145,8 +157,9 @@ public class LatencyHistogram {
         if (latency < maxSize) {
 
             // Can we actually add 1 to the value?
-            if (latencyHistogram[latency] < Integer.MAX_VALUE) {
-                latencyHistogram[latency]++;
+            if ((latencyHistogram[latency] + howMany) < Integer.MAX_VALUE) {
+                
+                latencyHistogram[latency] += howMany;
 
                 if (maxUsedSize < latency) {
                     maxUsedSize = latency;
@@ -161,11 +174,11 @@ public class LatencyHistogram {
         } else {
 
             // Latencies that don't fit into histogram get squeezed into last bucket.
-            if (latencyHistogram[maxSize - 1] < Integer.MAX_VALUE) {
+            if ((latencyHistogram[maxSize - 1] + howMany) < Integer.MAX_VALUE) {
 
-                latencyHistogram[maxSize - 1]++;
-
-                if (maxUsedSize == maxSize - 1) {
+                latencyHistogram[maxSize - 1] += howMany;
+ 
+                if (maxUsedSize != maxSize - 1) {
                     maxUsedSize = maxSize - 1;
                 }
 

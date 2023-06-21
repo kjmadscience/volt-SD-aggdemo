@@ -35,14 +35,12 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-
 import org.voltdb.VoltTable;
 import org.voltdb.client.Client;
 import org.voltdb.client.ClientConfig;
 import org.voltdb.client.ClientFactory;
 import org.voltdb.client.ClientResponse;
 import org.voltdb.client.ProcCallException;
-
 import org.voltdb.client.topics.VoltDBKafkaPartitioner;
 import org.voltdb.voltutil.stats.SafeHistogramCache;
 
@@ -63,11 +61,25 @@ public class MediationDataGenerator {
      * Name of stat we store
      */
     public static final String INPUT_LAG = "InputLag";
- 
+
+    /**
+     * Name of stat we store
+     */
+    public static final String OUTPUT_LAG = "OutputLag";
+
+    public static final String OUTPUT_POLL_BATCH_SIZE = "OutputPollBatchsize";
+
+    public static final int INPUT_LAG_HISTOGRAM_SIZE = 600000;
+
+    public static final int OUTPUT_LAG_HISTOGRAM_SIZE = 600000;
+
     public static SafeHistogramCache shc = SafeHistogramCache.getInstance();
 
     Client voltClient = null;
+
     Producer<Long, MediationMessage> producer = null;
+
+    AggregatedRecordConsumer arc = null;
 
     String hostnames;
     int userCount;
@@ -86,9 +98,9 @@ public class MediationDataGenerator {
     int normalCD = 0;
     int dateis1970Count = 0;
 
-    HashMap<String, MediationSession> sessionMap = new HashMap<String, MediationSession>();
-    ArrayList<MediationMessage> dupMessages = new ArrayList<MediationMessage>();
-    ArrayList<MediationMessage> lateMessages = new ArrayList<MediationMessage>();
+    HashMap<String, MediationSession> sessionMap = new HashMap<>();
+    ArrayList<MediationMessage> dupMessages = new ArrayList<>();
+    ArrayList<MediationMessage> lateMessages = new ArrayList<>();
 
     long startMs;
     Random r = new Random();
@@ -131,6 +143,14 @@ public class MediationDataGenerator {
 
         msg("Log into VoltDB");
         voltClient = connectVoltDB(hostnames);
+
+        msg("Create Agg record consumer");
+        arc = new AggregatedRecordConsumer(hostnames);
+
+        msg("Start Agg record consumer");
+        Thread thread = new Thread(arc,"AggRecordConsumer");
+        thread.start();
+
 
     }
 
@@ -239,6 +259,8 @@ public class MediationDataGenerator {
 
         sendRemainingMessages();
 
+        arc.stop();
+
         printStatus(startMs);
 
         reportRunLatencyStats(tpMs, (long) actualTps);
@@ -251,8 +273,8 @@ public class MediationDataGenerator {
     private void gatherInputLagStats() {
         try {
 
-            shc.init(INPUT_LAG, MAX_LAG_MS, "time from record creation to processing");
-            
+            shc.init(INPUT_LAG, INPUT_LAG_HISTOGRAM_SIZE, "time from record creation to processing");
+
             // See if param is set. If it is, update table DDL...
             ClientResponse cr = voltClient.callProcedure("get_processing_lag");
 
@@ -303,7 +325,7 @@ public class MediationDataGenerator {
 
     /**
      * Print general status info
-     * 
+     *
      * @param startMsReported
      */
     private void printStatus(long startMsReported) {
@@ -320,6 +342,8 @@ public class MediationDataGenerator {
                     / ((System.currentTimeMillis() - startMsReported) / 1000);
             msg("observedTps = " + observedTps);
         }
+
+        shc.incCounter("normalCDRCount",normalCDRCount);
 
     }
 
@@ -346,7 +370,7 @@ public class MediationDataGenerator {
 
     /**
      * Send a CDR to VoltDB via Kafka.
-     * 
+     *
      * @param nextCdr
      */
     private void send(MediationMessage nextCdr) {
@@ -354,7 +378,7 @@ public class MediationDataGenerator {
         if (useKafka) {
 
             ComplainOnErrorKafkaCallback coekc = new ComplainOnErrorKafkaCallback();
-            ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<Long, MediationMessage>(
+            ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<>(
                     "incoming_cdrs", nextCdr.getSessionId(), nextCdr);
             producer.send(newRecord, coekc);
         } else {
@@ -365,7 +389,7 @@ public class MediationDataGenerator {
 
     /**
      * Send CDR directly to VoltDB, in case you want to see if there's a difference.
-     * 
+     *
      * @param nextCdr
      */
     private void sendViaVoltDB(MediationMessage nextCdr) {
@@ -429,9 +453,9 @@ public class MediationDataGenerator {
     }
 
     /**
-     * 
+     *
      * Connect to VoltDB using native APIS
-     * 
+     *
      * @param commaDelimitedHostnames
      * @return
      * @throws Exception
@@ -451,10 +475,10 @@ public class MediationDataGenerator {
 
             String[] hostnameArray = commaDelimitedHostnames.split(",");
 
-            for (int i = 0; i < hostnameArray.length; i++) {
-                msg("Connect to " + hostnameArray[i] + "...");
+            for (String element : hostnameArray) {
+                msg("Connect to " + element + "...");
                 try {
-                    client.createConnection(hostnameArray[i]);
+                    client.createConnection(element);
                 } catch (Exception e) {
                     msg(e.getMessage());
                 }
@@ -473,7 +497,7 @@ public class MediationDataGenerator {
 
     /**
      * Connect to VoltDB using Kafka APIS
-     * 
+     *
      * @param commaDelimitedHostnames
      * @param keySerializer
      * @param valueSerializer
@@ -519,7 +543,7 @@ public class MediationDataGenerator {
 
     /**
      * Print a formatted message.
-     * 
+     *
      * @param message
      */
     public static void msg(String message) {
@@ -533,7 +557,7 @@ public class MediationDataGenerator {
 
     /**
      * Check VoltDB to see how things are going...
-     * 
+     *
      * @param client
      * @param nextCdr
      */
@@ -547,9 +571,9 @@ public class MediationDataGenerator {
             ClientResponse cr = client.callProcedure("ShowAggStatus__promBL");
             if (cr.getStatus() == ClientResponse.SUCCESS) {
                 VoltTable[] resultsTables = cr.getResults();
-                for (int i = 0; i < resultsTables.length; i++) {
-                    if (resultsTables[i].advanceRow()) {
-                        msg(resultsTables[i].toFormattedString());
+                for (VoltTable resultsTable : resultsTables) {
+                    if (resultsTable.advanceRow()) {
+                        msg(resultsTable.toFormattedString());
                     }
 
                 }
@@ -560,9 +584,9 @@ public class MediationDataGenerator {
 
             if (cr.getStatus() == ClientResponse.SUCCESS) {
                 VoltTable[] resultsTables = cr.getResults();
-                for (int i = 0; i < resultsTables.length; i++) {
-                    if (resultsTables[i].advanceRow()) {
-                        msg(resultsTables[i].toFormattedString());
+                for (VoltTable resultsTable : resultsTables) {
+                    if (resultsTable.advanceRow()) {
+                        msg(resultsTable.toFormattedString());
                     }
 
                 }
@@ -577,7 +601,7 @@ public class MediationDataGenerator {
 
     /**
      * Turn latency stats into a grepable string
-     * 
+     *
      * @param tpMs target transactions per millisecond
      * @param tps  observed TPS
      */
@@ -591,6 +615,10 @@ public class MediationDataGenerator {
         oneLineSummary.append(':');
 
         SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, INPUT_LAG);
+
+        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, OUTPUT_LAG);
+
+        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary,OUTPUT_POLL_BATCH_SIZE);
 
         msg(oneLineSummary.toString());
     }

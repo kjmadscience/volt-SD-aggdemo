@@ -71,6 +71,7 @@ public abstract class AbstractMediationProcedure extends VoltProcedure {
 				"UPDATE cdr_dupcheck SET last_agg_date = NOW, agg_state = ?"
 				+ ", aggregated_usage = aggregated_usage + ?"
 				+ ", unaggregated_usage = 0 "
+				+ ", max_input_lag_ms = 3600000"
 				+ "WHERE sessionId = ? AND sessionStartUTC = ?;");	
 	
 	// @formatter:on

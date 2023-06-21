@@ -21,6 +21,7 @@ CREATE TABLE cdr_dupcheck
 	 last_agg_date timestamp ,
 	 aggregated_usage bigint default 0,
 	 unaggregated_usage bigint default 0,
+	 max_input_lag_ms bigint default 0,
 	 primary key (sessionId,sessionStartUTC)
 )
 USING TTL 25 HOURS ON COLUMN insert_date BATCH_SIZE 50000;
@@ -44,12 +45,12 @@ GROUP BY  truncate(MINUTE, sessionStartUTC) , agg_state;
 CREATE INDEX cdssm_ix1 ON cdr_dupcheck_session_summary_minute (sessionStartUTC);
 
 CREATE view cdr_processing_lag AS
-SELECT truncate(MINUTE, sessionStartUTC) sessionStartUTC
-     , SINCE_EPOCH(MILLISECOND, insert_date)  - SINCE_EPOCH(MILLISECOND, sessionStartUTC) lag_ms
+SELECT truncate(MINUTE, insert_date) insert_date
+     , max_input_lag_ms lag_ms
      , count(*) how_many
 FROM cdr_dupcheck
-GROUP BY truncate(MINUTE, sessionStartUTC) 
-     , SINCE_EPOCH(MILLISECOND, insert_date)  - SINCE_EPOCH(MILLISECOND, sessionStartUTC);
+GROUP BY truncate(MINUTE, insert_date) 
+     , max_input_lag_ms ;
 
 
 CREATE VIEW total_unaggregated_usage AS 
@@ -151,8 +152,8 @@ drop procedure get_processing_lag if exists;
 create procedure get_processing_lag as 
 select lag_ms, how_many 
 from cdr_processing_lag 
-where sessionstartutc = truncate(minute, DATEADD(MINUTE, -1, NOW)) 
-order by SESSIONSTARTUTC, lag_ms;
+where insert_date = truncate(minute, DATEADD(MINUTE, -1, NOW)) 
+order by insert_date, lag_ms;
 
 
 --CREATE TOPIC incoming_cdrs EXECUTE PROCEDURE HandleMediationCDR  PROFILE daily;

@@ -44,14 +44,17 @@ public class HandleMediationCDR extends AbstractMediationProcedure {
 
 	public static final SQLStmt updateSessionSeqnosAndUsage = new SQLStmt(
 				"UPDATE cdr_dupcheck SET used_seqno_array = ?, "
-				+ "unaggregated_usage = unaggregated_usage + ? WHERE sessionId = ? AND sessionStartUTC = ?;");
+				+ "unaggregated_usage = unaggregated_usage + ?, "
+				+ "max_input_lag_ms = ? "
+				+ "WHERE sessionId = ? "
+				+ "AND sessionStartUTC = ?;");
 
 	public static final SQLStmt createSession = new SQLStmt(
 				"INSERT INTO cdr_dupcheck "
 				+ "(sessionId  , sessionStartUTC  , callingNumber , used_seqno_array "
-				+ ", unaggregated_usage, insert_date)"
+				+ ", unaggregated_usage, max_input_lag_ms, insert_date)"
 				+ " VALUES "
-				+ "(?,?,?,?,?, NOW)");
+				+ "(?,?,?,?,?,?, NOW)");
 		
 	public static final SQLStmt createUnaggedRecordSession = new SQLStmt(
 				"INSERT INTO unaggregated_cdrs  " +
@@ -142,13 +145,19 @@ public class HandleMediationCDR extends AbstractMediationProcedure {
 
 			// Note we've see this seqno
 			msr.setSeqno(seqno);
-			voltQueueSQL(updateSessionSeqnosAndUsage, msr.getSequence(), recordUsage, sessionId, sessionStartUTCAsDate);
+			long maxLag = sessionDupCheck.getLong("max_input_lag_ms");
+			long latestLag = this.getTransactionTime().getTime() - recordStartUTC;
+			
+			if (latestLag > maxLag) {
+			    maxLag = latestLag; 
+			}
+			voltQueueSQL(updateSessionSeqnosAndUsage, msr.getSequence(), recordUsage, maxLag, sessionId, sessionStartUTCAsDate);
 
 		} else {
 
 			// New session we've never heard of..
 			msr.setSeqno(seqno);
-			voltQueueSQL(createSession, sessionId, sessionStartUTCAsDate, callingNumber, msr.getSequence(),recordUsage);
+			voltQueueSQL(createSession, sessionId, sessionStartUTCAsDate, callingNumber, msr.getSequence(),recordUsage, (this.getTransactionTime().getTime() - recordStartUTC));
 
 		}
 
@@ -161,14 +170,14 @@ public class HandleMediationCDR extends AbstractMediationProcedure {
 		VoltTable[] totalRecords = voltExecuteSQL();
 		VoltTable totalRecordsTable = totalRecords[totalRecords.length - 1];
 
-		aggregateSessionIfNeeded(totalRecordsTable, msr, recordType, seqno);
+		aggregateSessionIfNeeded(totalRecordsTable, msr, recordType, seqno,recordStartUTCAsDate);
 
 		
 		return(getEmptyVoltTables());
 	}
 
 	protected void aggregateSessionIfNeeded(VoltTable totalRecordsTable, MediationRecordSequence msr, String recordType,
-			int seqno) {
+			int seqno, Date recordStartUTCAsDate) {
 		totalRecordsTable.advanceRow();
 
 		long unaggedRecordCount = totalRecordsTable.getLong("how_many");
