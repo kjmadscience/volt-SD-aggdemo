@@ -103,7 +103,7 @@ public class AggregatedRecordConsumer implements Runnable {
 
             Properties props = new Properties();
             props.put("bootstrap.servers", kafkaBrokers.toString()+",");
-            props.put("group.id", "PolicyChangeSessionMessageConsumer");
+            props.put("group.id", "AggregatedRecordConsumer"+ System.currentTimeMillis());
             props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
             props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
             props.put("auto.commit.interval.ms", "100");
@@ -112,6 +112,7 @@ public class AggregatedRecordConsumer implements Runnable {
 
             KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
             consumer.subscribe(Arrays.asList("aggregated_cdrs"));
+            
             long messageCounter = 0;
 
             while (keepGoing) {

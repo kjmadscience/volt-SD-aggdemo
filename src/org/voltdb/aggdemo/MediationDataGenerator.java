@@ -521,7 +521,7 @@ public class MediationDataGenerator {
 
         Properties props = new Properties();
         props.put("bootstrap.servers", kafkaBrokers.toString());
-        props.put("acks", "all");
+        props.put("acks", "1");
         props.put("retries", 0);
 
         // batch.size is how many bytes a batch can take up, not how many records in a
