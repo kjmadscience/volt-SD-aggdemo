@@ -543,7 +543,7 @@ public class MediationDataGenerator {
 
         Producer<Long, MediationMessage> newProducer = new KafkaProducer<>(props);
 
-        msg("Connected to VoltDB via Kafka");
+        msg("Connected to VoltDB via Kafka using " + kafkaBrokers.toString());
 
         return newProducer;
 
