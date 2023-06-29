@@ -541,9 +541,11 @@ public class MediationDataGenerator {
         props.put("value.serializer", valueSerializer);
         props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, VoltDBKafkaPartitioner.class.getName());
 
+        msg("Connecting to VoltDB via Kafka using " + kafkaBrokers.toString());
+
         Producer<Long, MediationMessage> newProducer = new KafkaProducer<>(props);
 
-        msg("Connected to VoltDB via Kafka using " + kafkaBrokers.toString());
+        msg("Connected to VoltDB via Kafka");
 
         return newProducer;
 
