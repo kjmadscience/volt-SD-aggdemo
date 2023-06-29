@@ -97,6 +97,8 @@ public class MediationDataGenerator {
     int lateCount = 0;
     int normalCD = 0;
     int dateis1970Count = 0;
+    
+    int kafkaPort = 9092;
 
     HashMap<String, MediationSession> sessionMap = new HashMap<>();
     ArrayList<MediationMessage> dupMessages = new ArrayList<>();
@@ -114,7 +116,7 @@ public class MediationDataGenerator {
     boolean useKafka = false;
 
     public MediationDataGenerator(String hostnames, int userCount, long dupCheckTtlMinutes, int tpMs,
-            int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag)
+            int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag, int kafkaPort)
             throws Exception {
 
         this.hostnames = hostnames;
@@ -130,16 +132,19 @@ public class MediationDataGenerator {
         if (useKafkaFlag > 0) {
             useKafka = true;
         }
+        
+        this.kafkaPort = kafkaPort;
 
         msg("hostnames=" + hostnames + ", users=" + userCount + ", tpMs=" + tpMs + ",durationSeconds="
                 + durationSeconds);
         msg("missingRatio=" + missingRatio + ", dupRatio=" + dupRatio + ", lateRatio=" + lateRatio
                 + ", dateis1970Ratio=" + dateis1970Ratio);
-        msg("use Kafka = " + useKafka);
+        msg("use Kafka = " + useKafka + ", kafkaPort=" + kafkaPort);
+      
         msg("Log into VoltDB's Kafka Broker");
 
         producer = connectToKafka(hostnames, "org.apache.kafka.common.serialization.LongSerializer",
-                "org.voltdb.aggdemo.MediationMessageSerializer");
+                "org.voltdb.aggdemo.MediationMessageSerializer",kafkaPort);
 
         msg("Log into VoltDB");
         voltClient = connectVoltDB(hostnames);
@@ -427,8 +432,8 @@ public class MediationDataGenerator {
 
     public static void main(String[] args) throws Exception {
 
-        if (args.length != 10) {
-            msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag");
+        if (args.length != 11) {
+            msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag kafkaPort");
             msg("where missingRatio, dupRatio, lateRatio and dateis1970Ratio are '1 in' ratios - i.e. 100 means 1%");
             msg("For userkafkaflag any value > zero means to use kafka instead of directly speaking to Volt");
             System.exit(1);
@@ -444,9 +449,10 @@ public class MediationDataGenerator {
         int dateis1970Ratio = Integer.parseInt(args[7]);
         int offset = Integer.parseInt(args[8]);
         int useKafka = Integer.parseInt(args[9]);
+        int kafkaPort = Integer.parseInt(args[10]);
 
         MediationDataGenerator a = new MediationDataGenerator(hostnames, userCount, durationSeconds, tpMs,
-                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka);
+                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka,kafkaPort);
 
         a.run(offset);
 
@@ -501,18 +507,20 @@ public class MediationDataGenerator {
      * @param commaDelimitedHostnames
      * @param keySerializer
      * @param valueSerializer
+     * @param kafkaPort 
      * @return A Kafka Producer for MediationMessages
      * @throws Exception
      */
     private static Producer<Long, MediationMessage> connectToKafka(String commaDelimitedHostnames, String keySerializer,
-            String valueSerializer) throws Exception {
+            String valueSerializer, int kafkaPort) throws Exception {
 
         String[] hostnameArray = commaDelimitedHostnames.split(",");
 
         StringBuffer kafkaBrokers = new StringBuffer();
         for (int i = 0; i < hostnameArray.length; i++) {
             kafkaBrokers.append(hostnameArray[i]);
-            kafkaBrokers.append(":9092");
+            kafkaBrokers.append(":");
+            kafkaBrokers.append(kafkaPort);
 
             if (i < (hostnameArray.length - 1)) {
                 kafkaBrokers.append(',');
