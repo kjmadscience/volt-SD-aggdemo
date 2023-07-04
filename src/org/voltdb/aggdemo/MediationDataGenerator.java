@@ -92,6 +92,8 @@ public class MediationDataGenerator {
 
     private static final String SESSION_Q_EMPTY = "SESSION_Q_EMPTY";
 
+    public static final String SESSION_ENDED = "SESSION_ENDED";
+
     public static SafeHistogramCache shc = SafeHistogramCache.getInstance();
 
     Client voltClient = null;
@@ -543,6 +545,7 @@ public class MediationDataGenerator {
             config = new ClientConfig(); // "admin", "idontknow");
             config.setTopologyChangeAware(true);
             config.setReconnectOnConnectionLoss(true);
+            config.setHeavyweight(true);
 
             client = ClientFactory.createClient(config);
 

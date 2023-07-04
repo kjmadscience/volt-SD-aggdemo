@@ -50,12 +50,16 @@ public class MediationCDRKafkaCallback implements org.apache.kafka.clients.produ
             MediationDataGenerator.msg("MediationCDRKafkaCallback:" + exception.getMessage());
         } else {
             try {
-                if (pseudoRandomSession != null && pseudoRandomSession.getAndDecrementRemainingActvity() > 0) {
+                if (pseudoRandomSession != null) {
+                    if (pseudoRandomSession.getAndDecrementRemainingActvity() > 0) {
 
-                    // Add entry back to queue if we're not finished with it....
-                    burstingSessionQueue.add(pseudoRandomSession);
-                    shc.incCounter(MediationDataGenerator.SESSION_RETURNED_TO_QUEUE);
+                        // Add entry back to queue if we're not finished with it....
+                        burstingSessionQueue.add(pseudoRandomSession);
+                        shc.incCounter(MediationDataGenerator.SESSION_RETURNED_TO_QUEUE);
 
+                    } else {
+                        shc.incCounter(MediationDataGenerator.SESSION_ENDED);
+                    }
                 }
 
             } catch (IllegalStateException e) {

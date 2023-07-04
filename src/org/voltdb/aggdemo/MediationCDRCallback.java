@@ -34,12 +34,12 @@ import org.voltdb.voltutil.stats.SafeHistogramCache;
  *
  */
 public class MediationCDRCallback implements ProcedureCallback {
-    
-    public static SafeHistogramCache shc = SafeHistogramCache.getInstance();    
+
+    public static SafeHistogramCache shc = SafeHistogramCache.getInstance();
     ActiveSession pseudoRandomSession;
     BlockingQueue<ActiveSession> burstingSessionQueue;
 
-    public MediationCDRCallback(ActiveSession pseudoRandomSession,BlockingQueue<ActiveSession> burstingSessionQueue) {
+    public MediationCDRCallback(ActiveSession pseudoRandomSession, BlockingQueue<ActiveSession> burstingSessionQueue) {
         this.pseudoRandomSession = pseudoRandomSession;
         this.burstingSessionQueue = burstingSessionQueue;
     }
@@ -51,15 +51,18 @@ public class MediationCDRCallback implements ProcedureCallback {
             MediationDataGenerator.msg("Error Code " + arg0.getStatusString());
         } else {
             try {
-                 if (pseudoRandomSession != null && pseudoRandomSession.getAndDecrementRemainingActvity() > 0) {
+                if (pseudoRandomSession != null) {
+                    if (pseudoRandomSession.getAndDecrementRemainingActvity() > 0) {
 
-                    // Add entry back to queue if we're not finished with it....
-                    burstingSessionQueue.add(pseudoRandomSession);
-                    shc.incCounter(MediationDataGenerator.SESSION_RETURNED_TO_QUEUE);
+                        // Add entry back to queue if we're not finished with it....
+                        burstingSessionQueue.add(pseudoRandomSession);
+                        shc.incCounter(MediationDataGenerator.SESSION_RETURNED_TO_QUEUE);
 
+                    } else {
+                        shc.incCounter(MediationDataGenerator.SESSION_ENDED);
+                    }
                 }
 
- 
             } catch (IllegalStateException e) {
                 shc.incCounter(MediationDataGenerator.SESSION_QUEUE_FULL);
             }
