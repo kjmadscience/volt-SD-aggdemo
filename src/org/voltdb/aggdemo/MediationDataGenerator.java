@@ -30,6 +30,9 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Properties;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -52,6 +55,8 @@ import org.voltdb.voltutil.stats.SafeHistogramCache;
  */
 public class MediationDataGenerator {
 
+    private static final String NUM_PREFIX = "Num";
+
     /**
      * Max time we track for stats purposes
      */
@@ -72,6 +77,20 @@ public class MediationDataGenerator {
     public static final int INPUT_LAG_HISTOGRAM_SIZE = 600000;
 
     public static final int OUTPUT_LAG_HISTOGRAM_SIZE = 600000;
+
+      
+
+    public static final int BURST_SESSION_BATCH_SIZE = 10;
+
+    public static final String SESSION_PULLED_FROM_Q = "SESSION_PULLED_FROM_Q";
+
+    public static final String SESSION_IS_NEW = "SESSION_IS_NEW";
+
+    public static final String SESSION_QUEUE_FULL = "SESSION_QUEUE_FULL";
+
+    public static final String SESSION_RETURNED_TO_QUEUE = "SESSION_RETURNED_TO_QUEUE";
+
+    private static final String SESSION_Q_EMPTY = "SESSION_Q_EMPTY";
 
     public static SafeHistogramCache shc = SafeHistogramCache.getInstance();
 
@@ -97,8 +116,10 @@ public class MediationDataGenerator {
     int lateCount = 0;
     int normalCD = 0;
     int dateis1970Count = 0;
-    
+
     int kafkaPort = 9092;
+    int maxActiveSessions;
+    
 
     HashMap<String, MediationSession> sessionMap = new HashMap<>();
     ArrayList<MediationMessage> dupMessages = new ArrayList<>();
@@ -110,14 +131,16 @@ public class MediationDataGenerator {
 
     long dupCheckTtlMinutes = 3600;
 
+    BlockingQueue<ActiveSession> activeSessionQueue;
+
     /**
      * Set this to false if you want to send CDRS to VoltDB directly..
      */
     boolean useKafka = false;
 
     public MediationDataGenerator(String hostnames, int userCount, long dupCheckTtlMinutes, int tpMs,
-            int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag, int kafkaPort)
-            throws Exception {
+            int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag,
+            int kafkaPort,int maxActiveSessions) throws Exception {
 
         this.hostnames = hostnames;
         this.userCount = userCount;
@@ -132,19 +155,23 @@ public class MediationDataGenerator {
         if (useKafkaFlag > 0) {
             useKafka = true;
         }
-        
+
         this.kafkaPort = kafkaPort;
+        this.maxActiveSessions = maxActiveSessions;
+        
+        activeSessionQueue = new LinkedBlockingDeque<>(maxActiveSessions);
 
         msg("hostnames=" + hostnames + ", users=" + userCount + ", tpMs=" + tpMs + ",durationSeconds="
                 + durationSeconds);
         msg("missingRatio=" + missingRatio + ", dupRatio=" + dupRatio + ", lateRatio=" + lateRatio
                 + ", dateis1970Ratio=" + dateis1970Ratio);
         msg("use Kafka = " + useKafka + ", kafkaPort=" + kafkaPort);
-      
+        msg("max active sessions = " + maxActiveSessions);
+
         msg("Log into VoltDB's Kafka Broker");
 
         producer = connectToKafka(hostnames, "org.apache.kafka.common.serialization.LongSerializer",
-                "org.voltdb.aggdemo.MediationMessageSerializer",kafkaPort);
+                "org.voltdb.aggdemo.MediationMessageSerializer", kafkaPort);
 
         msg("Log into VoltDB");
         voltClient = connectVoltDB(hostnames);
@@ -153,9 +180,8 @@ public class MediationDataGenerator {
         arc = new AggregatedRecordConsumer(hostnames);
 
         msg("Start Agg record consumer");
-        Thread thread = new Thread(arc,"AggRecordConsumer");
+        Thread thread = new Thread(arc, "AggRecordConsumer");
         thread.start();
-
 
     }
 
@@ -175,14 +201,14 @@ public class MediationDataGenerator {
 
             recordCount++;
 
-            String randomCallingNumber = "Num" + (r.nextInt(userCount) + offset);
+            ActiveSession pseudoRandomSession = getPseudoRandomSession(offset);
+            final String actualNumber = NUM_PREFIX + pseudoRandomSession.getNumber();
 
-            MediationSession ourSession = sessionMap.get(randomCallingNumber);
+            MediationSession ourSession = sessionMap.get(actualNumber);
 
             if (ourSession == null) {
-                ourSession = new MediationSession(randomCallingNumber, getRandomDestinationId(),
-                        +(offset + sessionId++), r);
-                sessionMap.put(randomCallingNumber, ourSession);
+                ourSession = new MediationSession(actualNumber, getRandomDestinationId(), +(offset + sessionId++), r);
+                sessionMap.put(actualNumber, ourSession);
             }
 
             MediationMessage nextCdr = ourSession.getNextCdr();
@@ -197,7 +223,7 @@ public class MediationDataGenerator {
 
                 // let's send it. Lot's of times...
                 for (int i = 0; i < 2 + r.nextInt(10); i++) {
-                    send(nextCdr);
+                    send(nextCdr, pseudoRandomSession);
                 }
 
                 // Also add it to a list of dup messages to send again, later...
@@ -214,12 +240,12 @@ public class MediationDataGenerator {
 
                 // Set date to Jan 1, 1970, and then send it...
                 nextCdr.setRecordStartUTC(0);
-                send(nextCdr);
+                send(nextCdr, pseudoRandomSession);
                 dateis1970Count++;
 
             } else {
 
-                send(nextCdr);
+                send(nextCdr, pseudoRandomSession);
                 normalCDRCount++;
 
             }
@@ -250,6 +276,9 @@ public class MediationDataGenerator {
 
                 msg("Offset = " + offset + " Record " + recordCount + " TPS=" + (long) actualTps);
                 msg("Active Sessions: " + sessionMap.size());
+                msg("Bursting Sessions: " + activeSessionQueue.size());
+                
+                msg(shc.toString());
 
                 laststatstime = System.currentTimeMillis();
                 lastReportedRecordCount = recordCount;
@@ -270,6 +299,41 @@ public class MediationDataGenerator {
 
         reportRunLatencyStats(tpMs, (long) actualTps);
 
+    }
+
+    /**
+     * Returns a pseudo random number. Numbers we are already using will have
+     * priority, otherwise random
+     *
+     * @param offset
+     * @return A pseudo random session.
+     */
+    private ActiveSession getPseudoRandomSession(int offset) {
+
+        ActiveSession b = null;
+
+        try {
+
+            b = activeSessionQueue.poll(0, TimeUnit.MILLISECONDS);
+            
+            if (b == null) {shc.incCounter(SESSION_Q_EMPTY);} else {
+
+                shc.incCounter(SESSION_PULLED_FROM_Q);
+
+                return new ActiveSession(b.getNumber() + offset, b.remainingActvity);
+            }
+
+        } catch (InterruptedException e1) {
+            e1.printStackTrace();
+        }
+
+        if (b == null) {
+            b = new ActiveSession(r.nextInt(userCount) + offset, BURST_SESSION_BATCH_SIZE);
+            shc.incCounter(SESSION_IS_NEW);
+
+        }
+
+        return b;
     }
 
     /**
@@ -348,7 +412,7 @@ public class MediationDataGenerator {
             msg("observedTps = " + observedTps);
         }
 
-        shc.incCounter("normalCDRCount",normalCDRCount);
+        shc.incCounter("normalCDRCount", normalCDRCount);
 
     }
 
@@ -362,14 +426,14 @@ public class MediationDataGenerator {
 
         while (lateMessages.size() > 0) {
             MediationMessage lateCDR = lateMessages.remove(0);
-            send(lateCDR);
+            send(lateCDR, null);
         }
 
         // Send dup messages
         msg("sending " + dupMessages.size() + " duplicate messages");
         while (dupMessages.size() > 0) {
             MediationMessage dupCDR = dupMessages.remove(0);
-            send(dupCDR);
+            send(dupCDR, null);
         }
     }
 
@@ -378,16 +442,16 @@ public class MediationDataGenerator {
      *
      * @param nextCdr
      */
-    private void send(MediationMessage nextCdr) {
+    private void send(MediationMessage nextCdr, ActiveSession pseudoRandomSession) {
 
         if (useKafka) {
 
-            ComplainOnErrorKafkaCallback coekc = new ComplainOnErrorKafkaCallback();
-            ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<>(
-                    "incoming_cdrs", nextCdr.getSessionId(), nextCdr);
+            MediationCDRKafkaCallback coekc = new MediationCDRKafkaCallback(pseudoRandomSession, activeSessionQueue);
+            ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<>("incoming_cdrs",
+                    nextCdr.getSessionId(), nextCdr);
             producer.send(newRecord, coekc);
         } else {
-            sendViaVoltDB(nextCdr);
+            sendViaVoltDB(nextCdr, pseudoRandomSession);
         }
 
     }
@@ -396,12 +460,13 @@ public class MediationDataGenerator {
      * Send CDR directly to VoltDB, in case you want to see if there's a difference.
      *
      * @param nextCdr
+     * @param pseudoRandomSession
      */
-    private void sendViaVoltDB(MediationMessage nextCdr) {
+    private void sendViaVoltDB(MediationMessage nextCdr, ActiveSession pseudoRandomSession) {
 
         if (voltClient != null) {
             try {
-                ComplainOnErrorCallback coec = new ComplainOnErrorCallback();
+                MediationCDRCallback coec = new MediationCDRCallback(pseudoRandomSession, activeSessionQueue);
 
                 voltClient.callProcedure(coec, "HandleMediationCDR", nextCdr.getSessionId(),
                         nextCdr.getSessionStartUTC(), nextCdr.getSeqno(), nextCdr.getCallingNumber(),
@@ -432,10 +497,11 @@ public class MediationDataGenerator {
 
     public static void main(String[] args) throws Exception {
 
-        if (args.length != 11) {
-            msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag kafkaPort");
+        if (args.length != 12) {
+            msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag kafkaPort maxActiveSessions");
             msg("where missingRatio, dupRatio, lateRatio and dateis1970Ratio are '1 in' ratios - i.e. 100 means 1%");
             msg("For userkafkaflag any value > zero means to use kafka instead of directly speaking to Volt");
+            msg("maxActiveSessions is a special cache for 'busy' sessions");
             System.exit(1);
         }
 
@@ -450,9 +516,10 @@ public class MediationDataGenerator {
         int offset = Integer.parseInt(args[8]);
         int useKafka = Integer.parseInt(args[9]);
         int kafkaPort = Integer.parseInt(args[10]);
+        int maxActiveSessions = Integer.parseInt(args[11]);
 
         MediationDataGenerator a = new MediationDataGenerator(hostnames, userCount, durationSeconds, tpMs,
-                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka,kafkaPort);
+                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka, kafkaPort,maxActiveSessions);
 
         a.run(offset);
 
@@ -507,7 +574,7 @@ public class MediationDataGenerator {
      * @param commaDelimitedHostnames
      * @param keySerializer
      * @param valueSerializer
-     * @param kafkaPort 
+     * @param kafkaPort
      * @return A Kafka Producer for MediationMessages
      * @throws Exception
      */
@@ -628,7 +695,7 @@ public class MediationDataGenerator {
 
         SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, OUTPUT_LAG);
 
-        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary,OUTPUT_POLL_BATCH_SIZE);
+        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, OUTPUT_POLL_BATCH_SIZE);
 
         msg(oneLineSummary.toString());
     }
