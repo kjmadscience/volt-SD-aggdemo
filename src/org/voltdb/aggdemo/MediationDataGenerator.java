@@ -43,9 +43,12 @@ import org.voltdb.client.Client;
 import org.voltdb.client.ClientConfig;
 import org.voltdb.client.ClientFactory;
 import org.voltdb.client.ClientResponse;
+import org.voltdb.client.NoConnectionsException;
 import org.voltdb.client.ProcCallException;
 import org.voltdb.client.topics.VoltDBKafkaPartitioner;
 import org.voltdb.voltutil.stats.SafeHistogramCache;
+
+import mediationdemo.AbstractMediationProcedure;
 
 /**
  * This generates mock CDRS that need to be aggregated. It also deliberately
@@ -54,6 +57,8 @@ import org.voltdb.voltutil.stats.SafeHistogramCache;
  *
  */
 public class MediationDataGenerator {
+
+    public static final String UNABLE_TO_MEET_REQUESTED_TPS = "UNABLE_TO_MEET_REQUESTED_TPS";
 
     private static final String NUM_PREFIX = "Num";
 
@@ -77,8 +82,6 @@ public class MediationDataGenerator {
     public static final int INPUT_LAG_HISTOGRAM_SIZE = 600000;
 
     public static final int OUTPUT_LAG_HISTOGRAM_SIZE = 600000;
-
-      
 
     public static final int BURST_SESSION_BATCH_SIZE = 10;
 
@@ -121,7 +124,6 @@ public class MediationDataGenerator {
 
     int kafkaPort = 9092;
     int maxActiveSessions;
-    
 
     HashMap<String, MediationSession> sessionMap = new HashMap<>();
     ArrayList<MediationMessage> dupMessages = new ArrayList<>();
@@ -142,7 +144,7 @@ public class MediationDataGenerator {
 
     public MediationDataGenerator(String hostnames, int userCount, long dupCheckTtlMinutes, int tpMs,
             int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag,
-            int kafkaPort,int maxActiveSessions) throws Exception {
+            int kafkaPort, int maxActiveSessions) throws Exception {
 
         this.hostnames = hostnames;
         this.userCount = userCount;
@@ -160,7 +162,7 @@ public class MediationDataGenerator {
 
         this.kafkaPort = kafkaPort;
         this.maxActiveSessions = maxActiveSessions;
-        
+
         activeSessionQueue = new LinkedBlockingDeque<>(maxActiveSessions);
 
         msg("hostnames=" + hostnames + ", users=" + userCount + ", tpMs=" + tpMs + ",durationSeconds="
@@ -184,10 +186,11 @@ public class MediationDataGenerator {
         msg("Start Agg record consumer");
         Thread thread = new Thread(arc, "AggRecordConsumer");
         thread.start();
+        msg("Agg record consumer is thread " + thread.getName());
 
     }
 
-    public void run(int offset) {
+    public boolean run(int offset) {
 
         long laststatstime = System.currentTimeMillis();
         startMs = System.currentTimeMillis();
@@ -279,7 +282,7 @@ public class MediationDataGenerator {
                 msg("Offset = " + offset + " Record " + recordCount + " TPS=" + (long) actualTps);
                 msg("Active Sessions: " + sessionMap.size());
                 msg("Bursting Sessions: " + activeSessionQueue.size());
-                
+
                 msg(shc.toString());
 
                 laststatstime = System.currentTimeMillis();
@@ -295,11 +298,27 @@ public class MediationDataGenerator {
 
         sendRemainingMessages();
 
+
+        try {
+            voltClient.drain();
+            voltClient.close();
+        } catch (NoConnectionsException | InterruptedException e) {
+            e.printStackTrace();
+        }
+
         arc.stop();
 
         printStatus(startMs);
 
         reportRunLatencyStats(tpMs, (long) actualTps);
+
+        // Declare victory if we got >= 90% of requested TPS...
+        if (actualTps / (tpMs * 1000) > .9) {
+            return true;
+
+        }
+
+        return false;
 
     }
 
@@ -317,22 +336,23 @@ public class MediationDataGenerator {
         try {
 
             b = activeSessionQueue.poll(0, TimeUnit.MILLISECONDS);
-            
-            if (b == null) {shc.incCounter(SESSION_Q_EMPTY);} else {
+
+            if (b == null) {
+                shc.incCounter(SESSION_Q_EMPTY);
+            } else {
 
                 shc.incCounter(SESSION_PULLED_FROM_Q);
 
                 return new ActiveSession(b.getNumber() + offset, b.remainingActvity);
             }
 
+            if (b == null) {
+                b = new ActiveSession(r.nextInt(userCount) + offset, BURST_SESSION_BATCH_SIZE);
+                shc.incCounter(SESSION_IS_NEW);
+            }
+
         } catch (InterruptedException e1) {
             e1.printStackTrace();
-        }
-
-        if (b == null) {
-            b = new ActiveSession(r.nextInt(userCount) + offset, BURST_SESSION_BATCH_SIZE);
-            shc.incCounter(SESSION_IS_NEW);
-
         }
 
         return b;
@@ -355,7 +375,9 @@ public class MediationDataGenerator {
                     int lagMs = (int) lagTable.getLong("lag_ms");
                     long howMany = lagTable.getLong("how_many");
 
-                    shc.get(INPUT_LAG).pokeValue(lagMs, howMany);
+                    if (lagMs < AbstractMediationProcedure.ONE_WEEK_IN_MS) {
+                        shc.get(INPUT_LAG).pokeValue(lagMs, howMany);
+                    }
                 }
             }
 
@@ -376,7 +398,7 @@ public class MediationDataGenerator {
             // Default is one day
             long ttlMinutes = 1440;
 
-            // Swee if param is set. If it is, update table DDL...
+            // See if param is set. If it is, update table DDL...
             ClientResponse cr = voltClient.callProcedure("@AdHoc",
                     "SELECT parameter_value FROM mediation_parameters WHERE parameter_name = 'DUPCHECK_TTLMINUTES';");
 
@@ -504,7 +526,7 @@ public class MediationDataGenerator {
             msg("where missingRatio, dupRatio, lateRatio and dateis1970Ratio are '1 in' ratios - i.e. 100 means 1%");
             msg("For userkafkaflag any value > zero means to use kafka instead of directly speaking to Volt");
             msg("maxActiveSessions is a special cache for 'busy' sessions");
-            System.exit(1);
+            System.exit(2);
         }
 
         String hostnames = args[0];
@@ -521,9 +543,17 @@ public class MediationDataGenerator {
         int maxActiveSessions = Integer.parseInt(args[11]);
 
         MediationDataGenerator a = new MediationDataGenerator(hostnames, userCount, durationSeconds, tpMs,
-                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka, kafkaPort,maxActiveSessions);
+                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka, kafkaPort,
+                maxActiveSessions);
 
-        a.run(offset);
+        boolean ok = a.run(offset);
+
+        if (ok) {
+            System.exit(0);
+        }
+
+        msg(UNABLE_TO_MEET_REQUESTED_TPS);
+        System.exit(1);
 
     }
 
@@ -701,6 +731,8 @@ public class MediationDataGenerator {
         SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, OUTPUT_POLL_BATCH_SIZE);
 
         msg(oneLineSummary.toString());
+
+        msg(shc.toString());
     }
 
 }

@@ -34,7 +34,9 @@ import org.voltdb.types.TimestampType;
  */
 public abstract class AbstractMediationProcedure extends VoltProcedure {
 
-	// @formatter:off
+    public static final long ONE_WEEK_IN_MS = 1000 * 60 * 60 * 24 * 7;
+
+    // @formatter:off
 
 	public static final SQLStmt getParameter = new SQLStmt(
 			"SELECT parameter_value FROM mediation_parameters WHERE parameter_name = ? ;");
@@ -71,12 +73,11 @@ public abstract class AbstractMediationProcedure extends VoltProcedure {
 				"UPDATE cdr_dupcheck SET last_agg_date = NOW, agg_state = ?"
 				+ ", aggregated_usage = aggregated_usage + ?"
 				+ ", unaggregated_usage = 0 "
-				+ ", max_input_lag_ms = 3600000"
+				+ ", max_input_lag_ms = " + ONE_WEEK_IN_MS + " "
 				+ "WHERE sessionId = ? AND sessionStartUTC = ?;");	
 	
 	// @formatter:on
 
-	protected static final long ONE_WEEK_IN_MS = 1000 * 60 * 60 * 24 * 7;
 
 	protected static final String AGG_USAGE = "AGG_USAGE";
 	protected static final String AGG_QTYCOUNT = "AGG_QTYCOUNT";

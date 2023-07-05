@@ -124,7 +124,23 @@ PARTITION ON COLUMN sessionId
 	 agg_date timestamp default now
 );
 
-DROP PROCEDURE GetBySessionId IF EXISTS;
+create view agg_summary_view 
+as 
+select truncate(minute, agg_date) agg_date
+     , count(*) how_many 
+     , sum(recordUsage) recordUsage
+     , sum(decode(reason,'END',recordUsage,0)) session_ended_bytes
+     , sum(decode(reason,'QTY',recordUsage,0)) session_qty_bytes
+     , sum(decode(reason,'USAGE',recordUsage,0)) session_usage_bytes
+     , sum(decode(reason,'AGE',recordUsage,0)) session_stale_bytes
+     , sum(decode(reason,'END',1,0)) session_ended_how_many
+     , sum(decode(reason,'QTY',1,0)) session_qty_how_many
+     , sum(decode(reason,'USAGE',1,0)) session_usage_how_many
+     , sum(decode(reason,'AGE',1,0)) session_stale_how_many
+from aggregated_cdrs 
+group by truncate(minute, agg_date);
+
+CREATE INDEX asvix1 ON agg_summary_view (agg_date);
 
 CREATE PROCEDURE  
    PARTITION ON TABLE cdr_dupcheck COLUMN sessionid
@@ -147,16 +163,12 @@ PROCEDURE FlushStaleSessions
 ON ERROR LOG 
 RUN ON PARTITIONS;
 
-drop procedure get_processing_lag if exists;
-
 create procedure get_processing_lag as 
 select lag_ms, how_many 
 from cdr_processing_lag 
 where insert_date = truncate(minute, DATEADD(MINUTE, -1, NOW)) 
 order by insert_date, lag_ms;
 
-
---CREATE TOPIC incoming_cdrs EXECUTE PROCEDURE HandleMediationCDR  PROFILE daily;
 
 CREATE PROCEDURE ShowAggStatus__promBL AS
 BEGIN
@@ -170,90 +182,62 @@ select 'mediation_agg_state_unaggregated_usage' statname
      , nvl(UNAGGREGATED_USAGE,0)  statvalue 
 from total_unaggregated_usage;
 
+
+
 select 'mediation_agg_state_end_qty_1min' statname
      ,  'mediation_agg_state_end_qty_1min' stathelp  
-     , decode(sum(how_many),null,0,sum(how_many))  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'END';
+     , session_ended_how_many  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
 
 select 'mediation_agg_state_end_usage_1min' statname
      ,  'mediation_agg_state_end_usage_1min' stathelp  
-     , nvl(sum(aggregated_usage),0)  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'END';
+     , session_ended_bytes  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
+
+
 
 select 'mediation_agg_state_usage_qty_1min' statname
-     ,  'mediation_agg_state_usage_qty_1min' stathelp  
-     , decode(sum(how_many),null,0,sum(how_many))  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'USAGE';
+     ,  'mediation_agg_state_end_qty_1min' stathelp  
+     , session_usage_how_many  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
 
 select 'mediation_agg_state_usage_usage_1min' statname
-     ,  'mediation_agg_state_usage_usage_1min' stathelp  
-     , nvl(sum(aggregated_usage),0) statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'USAGE';
+     ,  'mediation_agg_state_end_usage_1min' stathelp  
+     , session_usage_bytes  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
+
+
 
 select 'mediation_agg_state_late_qty_1min' statname
-     ,  'mediation_agg_state_late_qty_1min' stathelp  
-     , decode(sum(how_many),null,0,sum(how_many))  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'LATE';
+     ,  'mediation_agg_state_end_qty_1min' stathelp  
+     , session_stale_how_many  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
 
 select 'mediation_agg_state_late_usage_1min' statname
-     ,  'mediation_agg_state_late_usage_1min' stathelp  
-     , nvl(sum(aggregated_usage),0)  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'LATE';
+     ,  'mediation_agg_state_end_usage_1min' stathelp  
+     , session_stale_bytes  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
 
-select 'mediation_agg_state_age_qty_1min' statname
-     ,  'mediation_agg_state_age_qty_1min' stathelp  
-     , decode(sum(how_many),null,0,sum(how_many))  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'AGE';
-
-select 'mediation_agg_state_age_usage_1min' statname
-     ,  'mediation_agg_state_age_usage_1min' stathelp  
-     , nvl(sum(aggregated_usage),0)  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'AGE';
 
 select 'mediation_agg_state_qty_qty_1min' statname
      ,  'mediation_agg_state_qty_qty_1min' stathelp  
-     , decode(sum(how_many),null,0,sum(how_many))  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'QTY';
+     , session_qty_how_many  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
 
 select 'mediation_agg_state_qty_usage_1min' statname
      ,  'mediation_agg_state_qty_usage_1min' stathelp  
-     , nvl(sum(aggregated_usage),0)  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'QTY';
+     , session_qty_bytes  statvalue 
+from agg_summary_view 
+where agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW));
 
 
-select 'mediation_agg_state_end_qty_1min' statname
-     ,  'mediation_agg_state_end_qty_1min' stathelp  
-     , decode(sum(how_many),null,0,sum(how_many))  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'END';
-
-select 'mediation_agg_state_end_usage_1min' statname
-     ,  'mediation_agg_state_end_usage_1min' stathelp  
-     , nvl(sum(aggregated_usage),0)  statvalue 
-from cdr_dupcheck_agg_summary_minute 
-where last_agg_date = truncate(minute, DATEADD(MINUTE, -1, NOW))
-and agg_state  = 'END';
 
 select 'mediation_parameter_'||parameter_name statname
      ,  'mediation_parameter_'||parameter_name stathelp  

@@ -44,7 +44,7 @@ public class AggregatedRecordConsumer implements Runnable {
     /**
      * Handle for stats
      */
-    SafeHistogramCache sph =  SafeHistogramCache.getInstance();
+    SafeHistogramCache sph = SafeHistogramCache.getInstance();
 
     /**
      * Comma delimited list of Kafka hosts. Note we expect the port number with each
@@ -61,20 +61,19 @@ public class AggregatedRecordConsumer implements Runnable {
      * How often we sample
      */
     final int SAMPLE_FREQUENCY = 100;
-    
+
     /**
      * Date format mask
      */
     final String VOLT_EXPORTED_DATE_MASK = "yyyy-MM-dd HH:mm:ss.SSS";
-    
+
     /**
      * Date formatter for input data
      */
     SimpleDateFormat formatter = new SimpleDateFormat(VOLT_EXPORTED_DATE_MASK);
 
     /**
-     * Create a runnable instance of a class to poll the Kafka topic
-     * aggregated_cdrs
+     * Create a runnable instance of a class to poll the Kafka topic aggregated_cdrs
      *
      * @param hostnames - hostname1:9092,hostname2:9092 etc
      */
@@ -83,7 +82,7 @@ public class AggregatedRecordConsumer implements Runnable {
         this.commaDelimitedHostnames = commaDelimitedHostnames;
     }
 
-     @Override
+    @Override
     public void run() {
 
         try {
@@ -100,60 +99,61 @@ public class AggregatedRecordConsumer implements Runnable {
                 }
             }
 
-
             Properties props = new Properties();
-            props.put("bootstrap.servers", kafkaBrokers.toString()+",");
-            props.put("group.id", "AggregatedRecordConsumer"+ System.currentTimeMillis());
+            props.put("bootstrap.servers", kafkaBrokers.toString() + ",");
+            props.put("group.id", "AggregatedRecordConsumer" + System.currentTimeMillis());
             props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
             props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
             props.put("auto.commit.interval.ms", "100");
             props.put("auto.offset.reset", "latest");
 
-
             KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
             consumer.subscribe(Arrays.asList("aggregated_cdrs"));
-            
+
             long messageCounter = 0;
 
             while (keepGoing) {
 
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
-                
+
                 Date aggDate = null;
                 
-                for (ConsumerRecord<String, String> record : records) {
+                if (records != null) {
                     
-                    messageCounter++ ;
-                    
-                    if (messageCounter % SAMPLE_FREQUENCY == 0) {
-                        String commaSeperatedValue = record.value();
-                        String[] commaSeperatedValues = commaSeperatedValue.split(",");
-                        
-                         Date tempDate = formatter.parse(commaSeperatedValues[10]);
-                         
-                         // Find oldest record in the batch...
-                         if (aggDate == null || tempDate.before(aggDate)) {
-                             aggDate = new Date(tempDate.getTime());
-                         }
-                        
+                    for (ConsumerRecord<String, String> record : records) {
+
+                        messageCounter++;
+
+                        if (messageCounter % SAMPLE_FREQUENCY == 0) {
+                            String commaSeperatedValue = record.value();
+                            String[] commaSeperatedValues = commaSeperatedValue.split(",");
+
+                            Date tempDate = formatter.parse(commaSeperatedValues[10]);
+
+                            // Find oldest record in the batch...
+                            if (aggDate == null || tempDate.before(aggDate)) {
+                                aggDate = new Date(tempDate.getTime());
+                            }
+
+                        }
+
                     }
 
+                    if (records.count() > 0) {
+                        sph.reportLatency(MediationDataGenerator.OUTPUT_LAG, aggDate.getTime(), "",
+                                MediationDataGenerator.OUTPUT_LAG_HISTOGRAM_SIZE, records.count());
+                        
+                        sph.report(MediationDataGenerator.OUTPUT_POLL_BATCH_SIZE, records.count(), "", 1000);
+                    }
+                }
 
-                }
-                
-                if (records.count() > 0) {
-                    sph.reportLatency(MediationDataGenerator.OUTPUT_LAG, aggDate.getTime(), "", MediationDataGenerator.OUTPUT_LAG_HISTOGRAM_SIZE, records.count());                  
-                    sph.report(MediationDataGenerator.OUTPUT_POLL_BATCH_SIZE, records.count(),"",1000);                    
-                }
-                
-                
             }
 
             consumer.close();
             MediationDataGenerator.msg("AggregatedRecordConsumer halted");
 
         } catch (Exception e1) {
-            MediationDataGenerator.msg(e1.getMessage());
+            MediationDataGenerator.msg("AggregatedRecordConsumer: " + e1.getMessage());
         }
 
     }

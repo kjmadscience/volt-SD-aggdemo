@@ -22,6 +22,8 @@ DROP VIEW cdr_dupcheck_session_summary_minute IF EXISTS;
 
 DROP VIEW unaggregated_cdrs_by_session IF EXISTS;
 
+DROP VIEW agg_summary_view IF EXISTS;
+
 DROP TABLE mediation_parameters IF EXISTS;
 
 DROP TABLE cdr_dupcheck IF EXISTS;

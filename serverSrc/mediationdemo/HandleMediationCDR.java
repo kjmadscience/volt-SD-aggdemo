@@ -193,9 +193,9 @@ public class HandleMediationCDR extends AbstractMediationProcedure {
 			// Decide whether to aggregate this session
 			if (recordType.equalsIgnoreCase("E")) {
 				aggReason = "END";
-			} else if (unaggedRecordCount > aggQtyThreshold) {
+			} else if (unaggedRecordCount >= aggQtyThreshold) {
 				aggReason = "QTY";
-			} else if (unaggedRecordUsage > aggUsageThreshold) {
+			} else if (unaggedRecordUsage >= aggUsageThreshold) {
 				aggReason = "USAGE";
 			}
 

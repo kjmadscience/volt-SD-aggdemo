@@ -147,7 +147,7 @@ public class LatencyHistogram {
      */
     public void report(int latency, String comment, int howMany) {
 
-        reports += howMany;;
+        reports += howMany;
 
         if (latency < 0) {
             latency = 0;
@@ -156,7 +156,7 @@ public class LatencyHistogram {
         // Does this fit into our histogram?
         if (latency < maxSize) {
 
-            // Can we actually add 1 to the value?
+            // Can we actually add howMany to the value?
             if ((latencyHistogram[latency] + howMany) < Integer.MAX_VALUE) {
                 
                 latencyHistogram[latency] += howMany;
