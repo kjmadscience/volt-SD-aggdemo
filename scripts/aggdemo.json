@@ -256,7 +256,7 @@
         {
           "$$hashKey": "object:780",
           "format": "short",
-          "logBase": 10,
+          "logBase": 1,
           "min": "0",
           "show": true
         },
