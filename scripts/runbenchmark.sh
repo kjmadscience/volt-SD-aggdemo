@@ -11,9 +11,11 @@ KAFKAPORT=9092
 START_TPS=10
 INC_TPS=5
 MAX_TPS=200
-BUSY_CACHE=10000
 
 CURRENT_TPS=${START_TPS}
+
+TMPFILE=/tmp/$$.tmp
+STATFILE=${HOME}/log/${RUNSTART}_${CURRENT_TPS}_${KAF}.txt
 
 echo "upsert into mediation_parameters (parameter_name ,parameter_value) VALUES ('AGG_QTYCOUNT',1);"| sqlcmd --servers=${VDBHOSTS}
 
@@ -25,20 +27,23 @@ do
 	sleep 6
 	for i in 0 
 	do
-		OUTFILE=${RUNSTART}_${CURRENT_TPS}_${i}_${KAF}.out
+		OUTFILE=${HOME}/log/${RUNSTART}_${CURRENT_TPS}_${i}_${KAF}.out
 		rm  ${OUTFILE} 2> /dev/null
-       		java -jar voltdb-aggdemo-client.jar ${VDBHOSTS} ${USERCOUNT} ${CURRENT_TPS} ${DURATION} 1000 1000 1000 10000 $i ${KAF} ${KAFKAPORT} ${BUSY_CACHE} >  ${OUTFILE}
+       		java -jar voltdb-aggdemo-client.jar ${VDBHOSTS} ${USERCOUNT} ${CURRENT_TPS} ${DURATION} 1000 1000 1000 10000 $i ${KAF} ${KAFKAPORT} 10000 >  ${OUTFILE}
 
-		grep UNABLE_TO_MEET_REQUESTED_TPS ${OUTFILE} > /tmp/$$.tmp
+		grep GREPABLE  ${OUTFILE} >> ${STATFILE}
+
+		grep UNABLE_TO_MEET_REQUESTED_TPS ${OUTFILE} > ${TMPFILE}
 
 		if 
-			[ "$?" != "0"  -o -s /tmp/$$.tmp ]
+			[ -s ${TMPFILE} ]
 		then
 			echo Unable to do requested TPS
-			rm /tmp/$$.tmp
-			break
+			cat ${TMPFILE}
+			rm ${TMPFILE}
+			exit 0
 		else
-			rm /tmp/$$.tmp
+			rm ${TMPFILE}
 		fi
 	done
 	sleep 6
