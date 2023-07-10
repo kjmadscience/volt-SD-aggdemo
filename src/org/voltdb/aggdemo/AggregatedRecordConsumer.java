@@ -143,7 +143,7 @@ public class AggregatedRecordConsumer implements Runnable {
                         sph.reportLatency(MediationDataGenerator.OUTPUT_LAG, aggDate.getTime(), "",
                                 MediationDataGenerator.OUTPUT_LAG_HISTOGRAM_SIZE, records.count());
                         
-                        sph.report(MediationDataGenerator.OUTPUT_POLL_BATCH_SIZE, records.count(), "", 1000);
+                        sph.report(MediationDataGenerator.OUTPUT_POLL_BATCHSIZE, records.count(), "", 1000);
                     }
                 }
 

@@ -77,7 +77,9 @@ public class MediationDataGenerator {
      */
     public static final String OUTPUT_LAG = "OutputLag";
 
-    public static final String OUTPUT_POLL_BATCH_SIZE = "OutputPollBatchsize";
+    public static final String INPUT_CLIENT_LAG = "InputClientLag";
+
+    public static final String OUTPUT_POLL_BATCHSIZE = "OutputPollBatchSize";
 
     public static final int INPUT_LAG_HISTOGRAM_SIZE = 600000;
 
@@ -469,11 +471,16 @@ public class MediationDataGenerator {
     private void send(MediationMessage nextCdr, ActiveSession pseudoRandomSession) {
 
         if (useKafka) {
+            
+            final long startMs = System.currentTimeMillis();
 
             MediationCDRKafkaCallback coekc = new MediationCDRKafkaCallback(pseudoRandomSession, activeSessionQueue);
             ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<>("incoming_cdrs",
                     nextCdr.getSessionId(), nextCdr);
             producer.send(newRecord, coekc);
+            
+            shc.report(MediationDataGenerator.INPUT_CLIENT_LAG, (int) (System.currentTimeMillis() - startMs), "", 1000);
+                       
         } else {
             sendViaVoltDB(nextCdr, pseudoRandomSession);
         }
@@ -492,10 +499,15 @@ public class MediationDataGenerator {
             try {
                 MediationCDRCallback coec = new MediationCDRCallback(pseudoRandomSession, activeSessionQueue);
 
+                final long startMs = System.currentTimeMillis();
+                
                 voltClient.callProcedure(coec, "HandleMediationCDR", nextCdr.getSessionId(),
                         nextCdr.getSessionStartUTC(), nextCdr.getSeqno(), nextCdr.getCallingNumber(),
                         nextCdr.getDestination(), nextCdr.getEventType(), nextCdr.getRecordStartUTC(),
                         nextCdr.getRecordUsage());
+                
+                shc.report(MediationDataGenerator.INPUT_CLIENT_LAG, (int) (System.currentTimeMillis() - startMs), "", 1000);
+                
             } catch (Exception e) {
                 msg(e.getMessage());
             }
@@ -728,7 +740,9 @@ public class MediationDataGenerator {
 
         SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, OUTPUT_LAG);
 
-        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, OUTPUT_POLL_BATCH_SIZE);
+        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, OUTPUT_POLL_BATCHSIZE);
+
+        SafeHistogramCache.getProcPercentiles(shc, oneLineSummary, INPUT_CLIENT_LAG);
 
         msg(oneLineSummary.toString());
 
