@@ -108,6 +108,7 @@ public class MediationDataGenerator {
     AggregatedRecordConsumer arc = null;
 
     String hostnames;
+    String kafkaHostnames;
     int userCount;
     int tpMs;
     int durationSeconds;
@@ -144,11 +145,12 @@ public class MediationDataGenerator {
      */
     boolean useKafka = false;
 
-    public MediationDataGenerator(String hostnames, int userCount, long dupCheckTtlMinutes, int tpMs,
-            int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio, int useKafkaFlag,
-            int kafkaPort, int maxActiveSessions) throws Exception {
+    public MediationDataGenerator(String hostnames, String kafkaHostnames, int userCount, long dupCheckTtlMinutes,
+            int tpMs, int durationSeconds, int missingRatio, int dupRatio, int lateRatio, int dateis1970Ratio,
+            int useKafkaFlag, int kafkaPort, int maxActiveSessions) throws Exception {
 
         this.hostnames = hostnames;
+        this.kafkaHostnames = kafkaHostnames;
         this.userCount = userCount;
         this.dupCheckTtlMinutes = dupCheckTtlMinutes;
         this.tpMs = tpMs;
@@ -167,8 +169,8 @@ public class MediationDataGenerator {
 
         activeSessionQueue = new LinkedBlockingDeque<>(maxActiveSessions);
 
-        msg("hostnames=" + hostnames + ", users=" + userCount + ", tpMs=" + tpMs + ",durationSeconds="
-                + durationSeconds);
+        msg("hostnames=" + hostnames + ", kafkaHostnames=" + kafkaHostnames + ",users=" + userCount + ", tpMs=" + tpMs
+                + ",durationSeconds=" + durationSeconds);
         msg("missingRatio=" + missingRatio + ", dupRatio=" + dupRatio + ", lateRatio=" + lateRatio
                 + ", dateis1970Ratio=" + dateis1970Ratio);
         msg("use Kafka = " + useKafka + ", kafkaPort=" + kafkaPort);
@@ -176,7 +178,7 @@ public class MediationDataGenerator {
 
         msg("Log into VoltDB's Kafka Broker");
 
-        producer = connectToKafka(hostnames, "org.apache.kafka.common.serialization.LongSerializer",
+        producer = connectToKafka(kafkaHostnames, "org.apache.kafka.common.serialization.LongSerializer",
                 "org.voltdb.aggdemo.MediationMessageSerializer", kafkaPort);
 
         msg("Log into VoltDB");
@@ -299,7 +301,6 @@ public class MediationDataGenerator {
         gatherInputLagStats();
 
         sendRemainingMessages();
-
 
         try {
             voltClient.drain();
@@ -471,16 +472,16 @@ public class MediationDataGenerator {
     private void send(MediationMessage nextCdr, ActiveSession pseudoRandomSession) {
 
         if (useKafka) {
-            
+
             final long startMs = System.currentTimeMillis();
 
             MediationCDRKafkaCallback coekc = new MediationCDRKafkaCallback(pseudoRandomSession, activeSessionQueue);
             ProducerRecord<Long, MediationMessage> newRecord = new ProducerRecord<>("incoming_cdrs",
                     nextCdr.getSessionId(), nextCdr);
             producer.send(newRecord, coekc);
-            
+
             shc.report(MediationDataGenerator.INPUT_CLIENT_LAG, (int) (System.currentTimeMillis() - startMs), "", 1000);
-                       
+
         } else {
             sendViaVoltDB(nextCdr, pseudoRandomSession);
         }
@@ -500,14 +501,15 @@ public class MediationDataGenerator {
                 MediationCDRCallback coec = new MediationCDRCallback(pseudoRandomSession, activeSessionQueue);
 
                 final long startMs = System.currentTimeMillis();
-                
+
                 voltClient.callProcedure(coec, "HandleMediationCDR", nextCdr.getSessionId(),
                         nextCdr.getSessionStartUTC(), nextCdr.getSeqno(), nextCdr.getCallingNumber(),
                         nextCdr.getDestination(), nextCdr.getEventType(), nextCdr.getRecordStartUTC(),
                         nextCdr.getRecordUsage());
-                
-                shc.report(MediationDataGenerator.INPUT_CLIENT_LAG, (int) (System.currentTimeMillis() - startMs), "", 1000);
-                
+
+                shc.report(MediationDataGenerator.INPUT_CLIENT_LAG, (int) (System.currentTimeMillis() - startMs), "",
+                        1000);
+
             } catch (Exception e) {
                 msg(e.getMessage());
             }
@@ -533,8 +535,8 @@ public class MediationDataGenerator {
 
     public static void main(String[] args) throws Exception {
 
-        if (args.length != 12) {
-            msg("Usage: MediationDataGenerator hostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag kafkaPort maxActiveSessions");
+        if (args.length != 13) {
+            msg("Usage: MediationDataGenerator hostnames kafkaHostnames userCount tpMs durationSeconds missingRatio dupRatio lateRatio dateis1970Ratio offset userkafkaflag kafkaPort maxActiveSessions");
             msg("where missingRatio, dupRatio, lateRatio and dateis1970Ratio are '1 in' ratios - i.e. 100 means 1%");
             msg("For userkafkaflag any value > zero means to use kafka instead of directly speaking to Volt");
             msg("maxActiveSessions is a special cache for 'busy' sessions");
@@ -542,20 +544,21 @@ public class MediationDataGenerator {
         }
 
         String hostnames = args[0];
-        int userCount = Integer.parseInt(args[1]);
-        int tpMs = Integer.parseInt(args[2]);
-        int durationSeconds = Integer.parseInt(args[3]);
-        int missingRatio = Integer.parseInt(args[4]);
-        int dupRatio = Integer.parseInt(args[5]);
-        int lateRatio = Integer.parseInt(args[6]);
-        int dateis1970Ratio = Integer.parseInt(args[7]);
-        int offset = Integer.parseInt(args[8]);
-        int useKafka = Integer.parseInt(args[9]);
-        int kafkaPort = Integer.parseInt(args[10]);
-        int maxActiveSessions = Integer.parseInt(args[11]);
+        String kafkaHostnames = args[1];
+        int userCount = Integer.parseInt(args[2]);
+        int tpMs = Integer.parseInt(args[3]);
+        int durationSeconds = Integer.parseInt(args[4]);
+        int missingRatio = Integer.parseInt(args[5]);
+        int dupRatio = Integer.parseInt(args[6]);
+        int lateRatio = Integer.parseInt(args[7]);
+        int dateis1970Ratio = Integer.parseInt(args[8]);
+        int offset = Integer.parseInt(args[9]);
+        int useKafka = Integer.parseInt(args[10]);
+        int kafkaPort = Integer.parseInt(args[11]);
+        int maxActiveSessions = Integer.parseInt(args[12]);
 
-        MediationDataGenerator a = new MediationDataGenerator(hostnames, userCount, durationSeconds, tpMs,
-                durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka, kafkaPort,
+        MediationDataGenerator a = new MediationDataGenerator(hostnames, kafkaHostnames, userCount, durationSeconds,
+                tpMs, durationSeconds, missingRatio, dupRatio, lateRatio, dateis1970Ratio, useKafka, kafkaPort,
                 maxActiveSessions);
 
         boolean ok = a.run(offset);

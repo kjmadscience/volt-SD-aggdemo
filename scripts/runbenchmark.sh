@@ -3,33 +3,54 @@
 cd ../jars 
 
 USERCOUNT=100000
-KAF=1
 DURATION=600
 VDBHOSTS=`cat $HOME/.vdbhostnames`
+KAFKAHOSTS=`cat $HOME/.vdbhostnames`
 RUNSTART=`date '+%y%m%d_%H%M'`
 KAFKAPORT=9092
 START_TPS=10
 INC_TPS=5
 MAX_TPS=200
+TC=5
 
-CURRENT_TPS=${START_TPS}
 
 TMPFILE=/tmp/$$.tmp
-STATFILE=${HOME}/log/${RUNSTART}_${CURRENT_TPS}_${KAF}.txt
 
 echo "upsert into mediation_parameters (parameter_name ,parameter_value) VALUES ('AGG_QTYCOUNT',1);"| sqlcmd --servers=${VDBHOSTS}
 
-while
-	[ "${CURRENT_TPS}" -le "${MAX_TPS}" ]
-do 
-	echo ${CURRENT_TPPS}
-	echo "delete from cdr_dupcheck;" | sqlcmd --servers=${VDBHOSTS}
-	sleep 6
-	for i in 0 
-	do
-		OUTFILE=${HOME}/log/${RUNSTART}_${CURRENT_TPS}_${i}_${KAF}.out
-		rm  ${OUTFILE} 2> /dev/null
-       		java -jar voltdb-aggdemo-client.jar ${VDBHOSTS} ${USERCOUNT} ${CURRENT_TPS} ${DURATION} 1000 1000 1000 10000 $i ${KAF} ${KAFKAPORT} 10000 >  ${OUTFILE}
+for KAF in   1
+do
+
+	echo Use Kafka is $KAF
+
+	STATFILE=${HOME}/log/${RUNSTART}_${KAF}_stat.txt
+	CURRENT_TPS=${START_TPS}
+
+	while
+		[ "${CURRENT_TPS}" -le "${MAX_TPS}" ]
+	do 
+		echo ${CURRENT_TPS}
+		echo "delete from cdr_dupcheck;" | sqlcmd --servers=${VDBHOSTS}
+		sleep 6
+
+		ACTUAL_TPS_THIS_RUN=`expr ${CURRENT_TPS} / ${TC}`
+		ACTUAL_USERCOUNT_THIS_RUN=`expr ${USERCOUNT} / ${TC}`
+
+		CURRENT_TC=1
+
+		while
+			[ "${CURRENT_TC}" -le "${TC}" ]
+		do
+			ACTUAL_OFFSET_THIS_RUN=`expr ${CURRENT_TC} \* ${ACTUAL_USERCOUNT_THIS_RUN}`
+			OUTFILE=${HOME}/log/${RUNSTART}_${CURRENT_TPS}_${ACTUAL_OFFSET_THIS_RUN}_${KAF}.out
+			rm  ${OUTFILE} 2> /dev/null
+       			java -jar voltdb-aggdemo-client.jar ${VDBHOSTS} ${KAFKAHOSTS} ${USERCOUNT} ${ACTUAL_TPS_THIS_RUN} ${DURATION} 1000 1000 1000 10000 ${ACTUAL_OFFSET_THIS_RUN} ${KAF} ${KAFKAPORT} 10000  >  ${OUTFILE} &
+			sleep 1
+
+			CURRENT_TC=`expr $CURRENT_TC + 1`
+		done
+
+		wait
 
 		grep GREPABLE  ${OUTFILE} >> ${STATFILE}
 
@@ -41,13 +62,15 @@ do
 			echo Unable to do requested TPS
 			cat ${TMPFILE}
 			rm ${TMPFILE}
-			exit 0
+			break
 		else
 			rm ${TMPFILE}
 		fi
+
+		CURRENT_TPS=`expr ${CURRENT_TPS} + ${INC_TPS}`
+
 	done
 	sleep 6
 
-	CURRENT_TPS=`expr ${CURRENT_TPS} + ${INC_TPS}`
 done
 
