@@ -18,7 +18,7 @@ TMPFILE=/tmp/$$.tmp
 
 echo "upsert into mediation_parameters (parameter_name ,parameter_value) VALUES ('AGG_QTYCOUNT',1);"| sqlcmd --servers=${VDBHOSTS}
 
-for KAF in   1
+for KAF in 0 1
 do
 
 	echo Use Kafka is $KAF
