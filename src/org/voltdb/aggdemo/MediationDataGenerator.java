@@ -659,8 +659,13 @@ public class MediationDataGenerator {
         
         // Allow user to override partitioner with -DKAFKA_PARTITONER_NAME=foo
         String partitionerName = System.getProperty(KAFKA_PARTITONER_NAME,VoltDBKafkaPartitioner.class.getName());
+        
+        if (partitionerName.length() > 0) {
+            props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG,partitionerName );            
+        } else {
+            msg("not setting ProducerConfig.PARTITIONER_CLASS_CONFIG");
+        }
              
-        props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG,partitionerName );
 
         msg("Connecting to VoltDB via Kafka using " + kafkaBrokers.toString() + " and " + partitionerName);
 
