@@ -98,6 +98,8 @@ public class MediationDataGenerator {
     private static final String SESSION_Q_EMPTY = "SESSION_Q_EMPTY";
 
     public static final String SESSION_ENDED = "SESSION_ENDED";
+    
+    public static final String KAFKA_PARTITONER_NAME = "KAFKA_PARTITONER_NAME";
 
     public static SafeHistogramCache shc = SafeHistogramCache.getInstance();
 
@@ -654,9 +656,12 @@ public class MediationDataGenerator {
         props.put("buffer.memory", 33554432);
         props.put("key.serializer", keySerializer);
         props.put("value.serializer", valueSerializer);
-        props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, VoltDBKafkaPartitioner.class.getName());
+        
+        String partitionerName = System.getProperty(KAFKA_PARTITONER_NAME,VoltDBKafkaPartitioner.class.getName());
+             
+        props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG,partitionerName );
 
-        msg("Connecting to VoltDB via Kafka using " + kafkaBrokers.toString());
+        msg("Connecting to VoltDB via Kafka using " + kafkaBrokers.toString() + " and " + partitionerName);
 
         Producer<Long, MediationMessage> newProducer = new KafkaProducer<>(props);
 
