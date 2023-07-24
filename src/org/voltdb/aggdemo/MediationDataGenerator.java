@@ -657,6 +657,7 @@ public class MediationDataGenerator {
         props.put("key.serializer", keySerializer);
         props.put("value.serializer", valueSerializer);
         
+        // Allow user to override partitioner with -DKAFKA_PARTITONER_NAME=foo
         String partitionerName = System.getProperty(KAFKA_PARTITONER_NAME,VoltDBKafkaPartitioner.class.getName());
              
         props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG,partitionerName );
