@@ -187,7 +187,7 @@ public class MediationDataGenerator {
         voltClient = connectVoltDB(hostnames);
 
         msg("Create Agg record consumer");
-        arc = new AggregatedRecordConsumer(hostnames);
+        arc = new AggregatedRecordConsumer(kafkaHostnames);
 
         msg("Start Agg record consumer");
         Thread thread = new Thread(arc, "AggRecordConsumer");
