@@ -92,7 +92,7 @@ public class AggregatedRecordConsumer implements Runnable {
             StringBuffer kafkaBrokers = new StringBuffer();
             for (int i = 0; i < hostnameArray.length; i++) {
                 kafkaBrokers.append(hostnameArray[i]);
-                kafkaBrokers.append(":9092");
+                kafkaBrokers.append(":9093");
 
                 if (i < (hostnameArray.length - 1)) {
                     kafkaBrokers.append(',');
